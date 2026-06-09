@@ -1,372 +1,205 @@
 #include "FftOcean.h"
 
+#include <glad/glad.h>
+
 #include <algorithm>
 #include <cmath>
-#include <fstream>
-#include <limits>
-#include <random>
-#include <stdexcept>
+#include <string>
+#include <vector>
 
 namespace {
-constexpr float pi = 3.14159265359f;
-constexpr float twoPi = 2.0f * pi;
+constexpr float pi = 3.14159265358979323846f;
 
-float square(float value)
+float jonswapAlpha(float gravity, float fetch, float windSpeed)
 {
-    return value * value;
+    return 0.076f * std::pow(gravity * fetch / (windSpeed * windSpeed), -0.22f);
 }
 
-unsigned char toByte(float value)
+float jonswapPeakOmega(float gravity, float fetch, float windSpeed)
 {
-    value = std::clamp(value, 0.0f, 1.0f);
-    return static_cast<unsigned char>(value * 255.0f + 0.5f);
+    return 22.0f * std::pow(windSpeed * fetch / (gravity * gravity), -0.33f);
 }
 }
 
-float PrototypeHeightField::sample(float x, float z) const
+FftOcean::FftOcean()
+    : initShader_("shaders/ocean_spectrum_init.comp"),
+      packShader_("shaders/ocean_spectrum_pack.comp"),
+      updateShader_("shaders/ocean_spectrum_update.comp"),
+      fftHorizontalShader_("shaders/ocean_fft_horizontal.comp"),
+      fftVerticalShader_("shaders/ocean_fft_vertical.comp"),
+      assembleShader_("shaders/ocean_assemble.comp")
 {
-    if (resolution <= 0 || heights.empty() || patchLength <= 0.0f) {
-        return 0.0f;
+    // Four cascades whose world period divides the 1024 m ocean grid so every
+    // layer tiles seamlessly. Wind speed and short-wave fade are staggered so
+    // each cascade carries a distinct band: long swell -> wind sea -> chop ->
+    // ripples.
+    cascades_[0] = {1024.0f, 1.0f,
+        {0.36f, 14.0f, 30.0f, 300000.0f, 0.5f, 0.8f, 3.3f, 6.0f},
+        {0.0f, 1.0f, 0.0f, 100000.0f, 1.0f, 0.0f, 3.3f, 0.0f}};
+    cascades_[1] = {256.0f, 1.0f,
+        {0.30f, 9.0f, 30.0f, 100000.0f, 0.8f, 0.3f, 3.3f, 1.5f},
+        {0.0f, 1.0f, 0.0f, 100000.0f, 1.0f, 0.0f, 3.3f, 0.0f}};
+    cascades_[2] = {64.0f, 1.0f,
+        {0.24f, 5.0f, 40.0f, 30000.0f, 1.0f, 0.1f, 3.3f, 0.3f},
+        {0.0f, 1.0f, 0.0f, 100000.0f, 1.0f, 0.0f, 3.3f, 0.0f}};
+    cascades_[3] = {16.0f, 1.0f,
+        {0.18f, 3.0f, 25.0f, 10000.0f, 1.0f, 0.0f, 3.3f, 0.04f},
+        {0.0f, 1.0f, 0.0f, 100000.0f, 1.0f, 0.0f, 3.3f, 0.0f}};
+
+    for (int i = 0; i < kCascadeCount; ++i) {
+        lengthScales_[i] = cascades_[i].lengthScale;
+        tiles_[i] = cascades_[i].tile;
     }
 
-    const float uWrapped = x / patchLength - std::floor(x / patchLength);
-    const float vWrapped = z / patchLength - std::floor(z / patchLength);
-    const float fx = uWrapped * static_cast<float>(resolution);
-    const float fz = vWrapped * static_cast<float>(resolution);
-    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
-    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
-    const int x1 = (x0 + 1) % resolution;
-    const int z1 = (z0 + 1) % resolution;
-    const float tx = fx - std::floor(fx);
-    const float tz = fz - std::floor(fz);
-
-    const float h00 = heights[static_cast<size_t>(z0 * resolution + x0)];
-    const float h10 = heights[static_cast<size_t>(z0 * resolution + x1)];
-    const float h01 = heights[static_cast<size_t>(z1 * resolution + x0)];
-    const float h11 = heights[static_cast<size_t>(z1 * resolution + x1)];
-    const float hx0 = h00 + (h10 - h00) * tx;
-    const float hx1 = h01 + (h11 - h01) * tx;
-    return hx0 + (hx1 - hx0) * tz;
-}
-
-glm::vec2 PrototypeHeightField::sampleSlope(float x, float z) const
-{
-    if (resolution <= 0 || slopes.empty() || patchLength <= 0.0f) {
-        return glm::vec2(0.0f);
-    }
-
-    const float uWrapped = x / patchLength - std::floor(x / patchLength);
-    const float vWrapped = z / patchLength - std::floor(z / patchLength);
-    const float fx = uWrapped * static_cast<float>(resolution);
-    const float fz = vWrapped * static_cast<float>(resolution);
-    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
-    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
-    const int x1 = (x0 + 1) % resolution;
-    const int z1 = (z0 + 1) % resolution;
-    const float tx = fx - std::floor(fx);
-    const float tz = fz - std::floor(fz);
-
-    const glm::vec2 s00 = slopes[static_cast<size_t>(z0 * resolution + x0)];
-    const glm::vec2 s10 = slopes[static_cast<size_t>(z0 * resolution + x1)];
-    const glm::vec2 s01 = slopes[static_cast<size_t>(z1 * resolution + x0)];
-    const glm::vec2 s11 = slopes[static_cast<size_t>(z1 * resolution + x1)];
-    const glm::vec2 sx0 = s00 + (s10 - s00) * tx;
-    const glm::vec2 sx1 = s01 + (s11 - s01) * tx;
-    return sx0 + (sx1 - sx0) * tz;
-}
-
-glm::vec2 PrototypeHeightField::sampleDisplacement(float x, float z) const
-{
-    if (resolution <= 0 || displacements.empty() || patchLength <= 0.0f) {
-        return glm::vec2(0.0f);
-    }
-
-    const float uWrapped = x / patchLength - std::floor(x / patchLength);
-    const float vWrapped = z / patchLength - std::floor(z / patchLength);
-    const float fx = uWrapped * static_cast<float>(resolution);
-    const float fz = vWrapped * static_cast<float>(resolution);
-    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
-    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
-    const int x1 = (x0 + 1) % resolution;
-    const int z1 = (z0 + 1) % resolution;
-    const float tx = fx - std::floor(fx);
-    const float tz = fz - std::floor(fz);
-
-    const glm::vec2 d00 = displacements[static_cast<size_t>(z0 * resolution + x0)];
-    const glm::vec2 d10 = displacements[static_cast<size_t>(z0 * resolution + x1)];
-    const glm::vec2 d01 = displacements[static_cast<size_t>(z1 * resolution + x0)];
-    const glm::vec2 d11 = displacements[static_cast<size_t>(z1 * resolution + x1)];
-    const glm::vec2 dx0 = d00 + (d10 - d00) * tx;
-    const glm::vec2 dx1 = d01 + (d11 - d01) * tx;
-    return dx0 + (dx1 - dx0) * tz;
-}
-
-float PrototypeHeightField::sampleFoam(float x, float z) const
-{
-    if (resolution <= 0 || foam.empty() || patchLength <= 0.0f) {
-        return 0.0f;
-    }
-
-    const float uWrapped = x / patchLength - std::floor(x / patchLength);
-    const float vWrapped = z / patchLength - std::floor(z / patchLength);
-    const float fx = uWrapped * static_cast<float>(resolution);
-    const float fz = vWrapped * static_cast<float>(resolution);
-    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
-    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
-    return foam[static_cast<size_t>(z0 * resolution + x0)];
-}
-
-FftOcean::FftOcean(FftOceanConfig config, SpectrumParameters spectrum)
-    : config_(config),
-      spectrum_(spectrum)
-{
-    if (config_.resolution <= 0 || (config_.resolution & (config_.resolution - 1)) != 0) {
-        throw std::runtime_error("FFT ocean resolution must be a positive power of two.");
-    }
-    if (config_.patchLength <= 0.0f) {
-        throw std::runtime_error("FFT ocean patch length must be positive.");
-    }
-
-    spectrum_.windDirection = glm::normalize(spectrum_.windDirection);
+    createTextures();
+    uploadSpectrumBuffer();
     generateInitialSpectrum();
-    updateStats();
 }
 
-float FftOcean::jonswapSpectrum(const glm::vec2& k) const
+FftOcean::~FftOcean()
 {
-    const float kLength = glm::length(k);
-    if (kLength < spectrum_.lowCutoff || kLength > spectrum_.highCutoff) {
-        return 0.0f;
+    const unsigned int textures[] = {
+        initialSpectrumTexture_, spectrumTexture_, displacementTexture_, slopeTexture_};
+    glDeleteTextures(4, textures);
+    if (spectrumBuffer_ != 0) {
+        glDeleteBuffers(1, &spectrumBuffer_);
+    }
+}
+
+FftOcean::SpectrumParameters FftOcean::toSpectrumParameters(const OceanDisplaySpectrum& settings) const
+{
+    SpectrumParameters params;
+    params.scale = settings.scale;
+    params.angle = settings.windDirectionDeg / 180.0f * pi;
+    params.spreadBlend = settings.spreadBlend;
+    params.swell = std::clamp(settings.swell, 0.01f, 1.0f);
+    params.alpha = jonswapAlpha(gravity_, settings.fetch, settings.windSpeed);
+    params.peakOmega = jonswapPeakOmega(gravity_, settings.fetch, settings.windSpeed);
+    params.gamma = settings.peakEnhancement;
+    params.shortWavesFade = settings.shortWavesFade;
+    return params;
+}
+
+void FftOcean::createTextures()
+{
+    const int levels = static_cast<int>(std::floor(std::log2(static_cast<float>(kResolution)))) + 1;
+
+    auto createArray = [](unsigned int& texture, GLenum internalFormat, int layers, int mipLevels) {
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, texture);
+        glTexStorage3D(GL_TEXTURE_2D_ARRAY, mipLevels, internalFormat, kResolution, kResolution, layers);
+        const GLint minFilter = mipLevels > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
+        const GLint magFilter = mipLevels > 1 ? GL_LINEAR : GL_NEAREST;
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, minFilter);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, magFilter);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    };
+
+    createArray(initialSpectrumTexture_, GL_RGBA32F, kCascadeCount, 1);
+    createArray(spectrumTexture_, GL_RGBA32F, kCascadeCount * 2, 1);
+    createArray(displacementTexture_, GL_RGBA16F, kCascadeCount, levels);
+    createArray(slopeTexture_, GL_RG16F, kCascadeCount, levels);
+
+    // The foam channel of the displacement map accumulates across frames, so
+    // clear it once to a known zero state.
+    std::vector<float> zeros(static_cast<size_t>(kResolution) * kResolution * kCascadeCount * 4, 0.0f);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, displacementTexture_);
+    glTexSubImage3D(GL_TEXTURE_2D_ARRAY, 0, 0, 0, 0, kResolution, kResolution, kCascadeCount,
+        GL_RGBA, GL_FLOAT, zeros.data());
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+
+void FftOcean::uploadSpectrumBuffer()
+{
+    std::array<SpectrumParameters, kCascadeCount * 2> spectrums;
+    for (int i = 0; i < kCascadeCount; ++i) {
+        spectrums[i * 2] = toSpectrumParameters(cascades_[i].primary);
+        spectrums[i * 2 + 1] = toSpectrumParameters(cascades_[i].secondary);
     }
 
-    const float omega = std::sqrt(spectrum_.gravity * kLength);
-    if (omega <= 0.0f) {
-        return 0.0f;
+    if (spectrumBuffer_ == 0) {
+        glGenBuffers(1, &spectrumBuffer_);
     }
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, spectrumBuffer_);
+    glBufferData(GL_SHADER_STORAGE_BUFFER,
+        static_cast<GLsizeiptr>(spectrums.size() * sizeof(SpectrumParameters)),
+        spectrums.data(), GL_STATIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
 
-    const float fetch = std::max(spectrum_.fetch, 1.0f);
-    const float windSpeed = std::max(spectrum_.windSpeed, 0.1f);
-    const float peakOmega = 22.0f * std::pow(spectrum_.gravity * spectrum_.gravity / (windSpeed * fetch), 1.0f / 3.0f);
-    const float sigma = omega <= peakOmega ? 0.07f : 0.09f;
-    const float r = std::exp(-square(omega - peakOmega) / (2.0f * square(sigma) * square(peakOmega)));
-
-    const float alpha = 0.076f * std::pow(windSpeed * windSpeed / (spectrum_.gravity * fetch), 0.22f);
-    const float base = alpha * spectrum_.gravity * spectrum_.gravity
-        * std::exp(-1.25f * std::pow(peakOmega / omega, 4.0f))
-        / std::pow(omega, 5.0f);
-    const float jonswap = base * std::pow(spectrum_.gamma, r);
-
-    const glm::vec2 direction = k / kLength;
-    const float downwind = std::max(glm::dot(direction, spectrum_.windDirection), 0.0f);
-    const float spreading = std::pow(downwind, spectrum_.directionalSpreadPower);
-    const float jacobian = spectrum_.gravity / (2.0f * std::max(omega, 0.0001f));
-
-    return spectrum_.amplitudeScale * jonswap * spreading * jacobian;
+void FftOcean::setLengthScaleUniform(const Shader& shader) const
+{
+    for (int i = 0; i < kCascadeCount; ++i) {
+        shader.setFloat("uLengthScales[" + std::to_string(i) + "]", lengthScales_[i]);
+    }
 }
 
 void FftOcean::generateInitialSpectrum()
 {
-    const int n = config_.resolution;
-    initialSpectrum_.assign(static_cast<size_t>(n * n), std::complex<float>(0.0f, 0.0f));
+    const GLuint groups = static_cast<GLuint>(kResolution / 8);
 
-    std::mt19937 rng(config_.seed);
-    std::normal_distribution<float> gaussian(0.0f, 1.0f);
-    const float dk = twoPi / config_.patchLength;
+    initShader_.use();
+    setLengthScaleUniform(initShader_);
+    initShader_.setInt("uN", kResolution);
+    initShader_.setInt("uSeed", seed_);
+    initShader_.setFloat("uGravity", gravity_);
+    initShader_.setFloat("uDepth", depth_);
+    initShader_.setFloat("uLowCutoff", lowCutoff_);
+    initShader_.setFloat("uHighCutoff", highCutoff_);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, spectrumBuffer_);
+    glBindImageTexture(0, initialSpectrumTexture_, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    glDispatchCompute(groups, groups, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    for (int y = 0; y < n; ++y) {
-        const int signedY = y < n / 2 ? y : y - n;
-        for (int x = 0; x < n; ++x) {
-            const int signedX = x < n / 2 ? x : x - n;
-            const glm::vec2 k(static_cast<float>(signedX) * dk, static_cast<float>(signedY) * dk);
-            const float spectrumValue = jonswapSpectrum(k);
-            const float scale = std::sqrt(std::max(spectrumValue, 0.0f)) * 0.70710678f;
-            initialSpectrum_[static_cast<size_t>(y * n + x)] = std::complex<float>(
-                gaussian(rng) * scale,
-                gaussian(rng) * scale);
-        }
-    }
-
-    initialSpectrum_[0] = std::complex<float>(0.0f, 0.0f);
+    packShader_.use();
+    packShader_.setInt("uN", kResolution);
+    glBindImageTexture(0, initialSpectrumTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glDispatchCompute(groups, groups, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void FftOcean::updateStats()
+void FftOcean::update(float time)
 {
-    double totalMagnitude = 0.0;
-    double totalEnergy = 0.0;
-    float maxMagnitude = 0.0f;
-    bool invalid = false;
+    const GLuint groups = static_cast<GLuint>(kResolution / 8);
 
-    for (const std::complex<float>& value : initialSpectrum_) {
-        const float magnitude = std::abs(value);
-        if (!std::isfinite(value.real()) || !std::isfinite(value.imag()) || !std::isfinite(magnitude)) {
-            invalid = true;
-            continue;
-        }
+    updateShader_.use();
+    setLengthScaleUniform(updateShader_);
+    updateShader_.setInt("uN", kResolution);
+    updateShader_.setFloat("uGravity", gravity_);
+    updateShader_.setFloat("uRepeatTime", repeatTime_);
+    updateShader_.setFloat("uFrameTime", time);
+    glBindImageTexture(0, initialSpectrumTexture_, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(1, spectrumTexture_, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA32F);
+    glDispatchCompute(groups, groups, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-        maxMagnitude = std::max(maxMagnitude, magnitude);
-        totalMagnitude += magnitude;
-        totalEnergy += static_cast<double>(magnitude) * static_cast<double>(magnitude);
-    }
+    fftHorizontalShader_.use();
+    glBindImageTexture(0, spectrumTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glDispatchCompute(1, static_cast<GLuint>(kResolution), 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-    stats_.maxMagnitude = maxMagnitude;
-    stats_.averageMagnitude = initialSpectrum_.empty()
-        ? 0.0f
-        : static_cast<float>(totalMagnitude / static_cast<double>(initialSpectrum_.size()));
-    stats_.totalEnergy = static_cast<float>(totalEnergy);
-    stats_.hasInvalidValues = invalid;
-}
+    fftVerticalShader_.use();
+    glBindImageTexture(0, spectrumTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
+    glDispatchCompute(1, static_cast<GLuint>(kResolution), 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 
-PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, float timeSeconds) const
-{
-    if (outputResolution <= 0 || (outputResolution & (outputResolution - 1)) != 0) {
-        throw std::runtime_error("Prototype FFT height field resolution must be a positive power of two.");
-    }
-    if (outputResolution > config_.resolution) {
-        throw std::runtime_error("Prototype FFT height field cannot exceed the source spectrum resolution.");
-    }
+    assembleShader_.use();
+    assembleShader_.setInt("uN", kResolution);
+    assembleShader_.setVec2("uLambda", lambda_);
+    assembleShader_.setFloat("uFoamDecayRate", foamDecayRate_);
+    assembleShader_.setFloat("uFoamBias", foamBias_);
+    assembleShader_.setFloat("uFoamThreshold", foamThreshold_);
+    assembleShader_.setFloat("uFoamAdd", foamAdd_);
+    glBindImageTexture(0, spectrumTexture_, 0, GL_TRUE, 0, GL_READ_ONLY, GL_RGBA32F);
+    glBindImageTexture(1, displacementTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA16F);
+    glBindImageTexture(2, slopeTexture_, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RG16F);
+    glDispatchCompute(groups, groups, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
 
-    PrototypeHeightField field;
-    field.resolution = outputResolution;
-    field.patchLength = config_.patchLength;
-    field.heights.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
-    field.slopes.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
-    field.displacements.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
-    field.foam.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
-    field.minHeight = std::numeric_limits<float>::max();
-    field.maxHeight = std::numeric_limits<float>::lowest();
-
-    const int n = config_.resolution;
-    const int m = outputResolution;
-    const float dk = twoPi / config_.patchLength;
-    const float dx = config_.patchLength / static_cast<float>(m);
-    const float normalization = 1.0f / static_cast<float>(m * m);
-
-    for (int z = 0; z < m; ++z) {
-        for (int x = 0; x < m; ++x) {
-            const glm::vec2 position(
-                (static_cast<float>(x) - static_cast<float>(m) * 0.5f) * dx,
-                (static_cast<float>(z) - static_cast<float>(m) * 0.5f) * dx);
-
-            std::complex<float> height(0.0f, 0.0f);
-            glm::vec2 displacement(0.0f);
-            for (int ky = -m / 2; ky < m / 2; ++ky) {
-                for (int kx = -m / 2; kx < m / 2; ++kx) {
-                    if (kx == 0 && ky == 0) {
-                        continue;
-                    }
-
-                    const int sourceX = (kx + n) % n;
-                    const int sourceY = (ky + n) % n;
-                    const int sourceNegX = (-kx + n) % n;
-                    const int sourceNegY = (-ky + n) % n;
-                    const std::complex<float> h0 = initialSpectrum_[static_cast<size_t>(sourceY * n + sourceX)];
-                    const std::complex<float> h0Neg = initialSpectrum_[static_cast<size_t>(sourceNegY * n + sourceNegX)];
-                    const glm::vec2 k(static_cast<float>(kx) * dk, static_cast<float>(ky) * dk);
-                    const float omega = std::sqrt(spectrum_.gravity * glm::length(k));
-                    const std::complex<float> positive(std::cos(omega * timeSeconds), std::sin(omega * timeSeconds));
-                    const std::complex<float> negative(std::cos(-omega * timeSeconds), std::sin(-omega * timeSeconds));
-                    const std::complex<float> evolved = h0 * positive + std::conj(h0Neg) * negative;
-                    const float phase = glm::dot(k, position);
-                    const std::complex<float> spatialWave = evolved * std::complex<float>(std::cos(phase), std::sin(phase));
-                    height += spatialWave;
-                    const float kLength = glm::length(k);
-                    if (kLength > 0.0001f) {
-                        displacement += (k / kLength) * spatialWave.imag();
-                    }
-                }
-            }
-
-            const float finalHeight = height.real() * normalization * 110.0f;
-            const glm::vec2 finalDisplacement = displacement * normalization * 82.0f;
-            field.heights[static_cast<size_t>(z * m + x)] = finalHeight;
-            field.displacements[static_cast<size_t>(z * m + x)] = finalDisplacement;
-            field.minHeight = std::min(field.minHeight, finalHeight);
-            field.maxHeight = std::max(field.maxHeight, finalHeight);
-        }
-    }
-
-    const float cellSize = config_.patchLength / static_cast<float>(m);
-    for (int z = 0; z < m; ++z) {
-        const int zPrev = (z - 1 + m) % m;
-        const int zNext = (z + 1) % m;
-        for (int x = 0; x < m; ++x) {
-            const int xPrev = (x - 1 + m) % m;
-            const int xNext = (x + 1) % m;
-            const float heightLeft = field.heights[static_cast<size_t>(z * m + xPrev)];
-            const float heightRight = field.heights[static_cast<size_t>(z * m + xNext)];
-            const float heightDown = field.heights[static_cast<size_t>(zPrev * m + x)];
-            const float heightUp = field.heights[static_cast<size_t>(zNext * m + x)];
-            field.slopes[static_cast<size_t>(z * m + x)] = glm::vec2(
-                (heightRight - heightLeft) / (2.0f * cellSize),
-                (heightUp - heightDown) / (2.0f * cellSize));
-        }
-    }
-
-    for (int z = 0; z < m; ++z) {
-        const int zPrev = (z - 1 + m) % m;
-        const int zNext = (z + 1) % m;
-        for (int x = 0; x < m; ++x) {
-            const int xPrev = (x - 1 + m) % m;
-            const int xNext = (x + 1) % m;
-            const glm::vec2 dispLeft = field.displacements[static_cast<size_t>(z * m + xPrev)];
-            const glm::vec2 dispRight = field.displacements[static_cast<size_t>(z * m + xNext)];
-            const glm::vec2 dispDown = field.displacements[static_cast<size_t>(zPrev * m + x)];
-            const glm::vec2 dispUp = field.displacements[static_cast<size_t>(zNext * m + x)];
-            const float dDxDx = (dispRight.x - dispLeft.x) / (2.0f * cellSize);
-            const float dDxDz = (dispUp.x - dispDown.x) / (2.0f * cellSize);
-            const float dDzDx = (dispRight.y - dispLeft.y) / (2.0f * cellSize);
-            const float dDzDz = (dispUp.y - dispDown.y) / (2.0f * cellSize);
-            const float jacobian = (1.0f + dDxDx) * (1.0f + dDzDz) - dDxDz * dDzDx;
-            const float compression = std::clamp((0.72f - jacobian) / 0.54f, 0.0f, 1.0f);
-            const float crest = std::clamp((field.heights[static_cast<size_t>(z * m + x)] - 0.15f) / 1.45f, 0.0f, 1.0f);
-            const float slopeAmount = std::clamp(glm::length(field.slopes[static_cast<size_t>(z * m + x)]) * 8.0f, 0.0f, 1.0f);
-            const float crestBreak = slopeAmount * std::clamp((crest + 0.25f) / 1.25f, 0.0f, 1.0f);
-            field.foam[static_cast<size_t>(z * m + x)] = std::max(compression * compression, crestBreak * 0.72f) * (0.35f + crest * 0.65f);
-        }
-    }
-
-    return field;
-}
-
-void FftOcean::saveSpectrumDebugImage(const std::filesystem::path& path) const
-{
-    if (!path.parent_path().empty()) {
-        std::filesystem::create_directories(path.parent_path());
-    }
-
-    const int n = config_.resolution;
-    const int rowStride = (n * 3 + 3) & ~3;
-    const int pixelDataSize = rowStride * n;
-    const int fileSize = 54 + pixelDataSize;
-    std::vector<unsigned char> bmp(static_cast<size_t>(fileSize), 0);
-
-    bmp[0] = 'B';
-    bmp[1] = 'M';
-    *reinterpret_cast<int*>(&bmp[2]) = fileSize;
-    *reinterpret_cast<int*>(&bmp[10]) = 54;
-    *reinterpret_cast<int*>(&bmp[14]) = 40;
-    *reinterpret_cast<int*>(&bmp[18]) = n;
-    *reinterpret_cast<int*>(&bmp[22]) = n;
-    *reinterpret_cast<short*>(&bmp[26]) = 1;
-    *reinterpret_cast<short*>(&bmp[28]) = 24;
-    *reinterpret_cast<int*>(&bmp[34]) = pixelDataSize;
-
-    const float invMax = stats_.maxMagnitude > 0.0f ? 1.0f / std::log(1.0f + stats_.maxMagnitude) : 0.0f;
-
-    for (int y = 0; y < n; ++y) {
-        unsigned char* dst = bmp.data() + 54 + y * rowStride;
-        for (int x = 0; x < n; ++x) {
-            const int sourceX = (x + n / 2) % n;
-            const int sourceY = (y + n / 2) % n;
-            const float magnitude = std::abs(initialSpectrum_[static_cast<size_t>(sourceY * n + sourceX)]);
-            const float value = invMax > 0.0f ? std::log(1.0f + magnitude) * invMax : 0.0f;
-            const unsigned char shade = toByte(std::pow(value, 0.45f));
-            dst[x * 3 + 0] = shade;
-            dst[x * 3 + 1] = shade;
-            dst[x * 3 + 2] = shade;
-        }
-    }
-
-    std::ofstream out(path, std::ios::binary);
-    out.write(reinterpret_cast<const char*>(bmp.data()), static_cast<std::streamsize>(bmp.size()));
+    glBindTexture(GL_TEXTURE_2D_ARRAY, displacementTexture_);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, slopeTexture_);
+    glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 }

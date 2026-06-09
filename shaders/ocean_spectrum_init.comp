@@ -1,0 +1,186 @@
+#version 430 core
+
+// Builds the initial ocean spectrum h0(k) for every cascade using a
+// JONSWAP + TMA spectrum with directional spreading (Hasselmann cosine-2s
+// blended with Donelan-Banner). Ported from the reference Unity project's
+// CS_InitializeSpectrum kernel (FFT / JONSWAP after gasgiant/FFT-Ocean).
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (rgba32f, binding = 0) uniform writeonly image2DArray uInitialSpectrum;
+
+uniform int uN;
+uniform int uSeed;
+uniform float uLengthScales[4];
+uniform float uGravity;
+uniform float uDepth;
+uniform float uLowCutoff;
+uniform float uHighCutoff;
+
+const float PI = 3.14159265358979323846;
+
+struct SpectrumParameters {
+    float scale;
+    float angle;
+    float spreadBlend;
+    float swell;
+    float alpha;
+    float peakOmega;
+    float gamma;
+    float shortWavesFade;
+};
+
+layout (std430, binding = 0) readonly buffer Spectrums {
+    SpectrumParameters spectrums[];
+};
+
+float hash(uint n)
+{
+    // Integer hash (Hugo Elias).
+    n = (n << 13u) ^ n;
+    // The reference uses 0x1376312589 which overflows 32 bits; HLSL keeps the
+    // low 32 bits (0x76312589), so match that explicitly for GLSL.
+    n = n * (n * n * 15731u + 0x789221u) + 0x76312589u;
+    return float(n & uint(0x7fffffffu)) / float(0x7fffffff);
+}
+
+vec2 uniformToGaussian(float u1, float u2)
+{
+    float r = sqrt(-2.0 * log(max(u1, 1e-7)));
+    float theta = 2.0 * PI * u2;
+    return vec2(r * cos(theta), r * sin(theta));
+}
+
+float dispersion(float kMag)
+{
+    return sqrt(uGravity * kMag * tanh(min(kMag * uDepth, 20.0)));
+}
+
+float dispersionDerivative(float kMag)
+{
+    float th = tanh(min(kMag * uDepth, 20.0));
+    float ch = cosh(kMag * uDepth);
+    return uGravity * (uDepth * kMag / (ch * ch) + th) / dispersion(kMag) / 2.0;
+}
+
+float normalizationFactor(float s)
+{
+    float s2 = s * s;
+    float s3 = s2 * s;
+    float s4 = s3 * s;
+    if (s < 5.0) {
+        return -0.000564 * s4 + 0.00776 * s3 - 0.044 * s2 + 0.192 * s + 0.163;
+    }
+    return -4.80e-08 * s4 + 1.07e-05 * s3 - 9.53e-04 * s2 + 5.90e-02 * s + 3.93e-01;
+}
+
+float donelanBannerBeta(float x)
+{
+    if (x < 0.95) {
+        return 2.61 * pow(abs(x), 1.3);
+    }
+    if (x < 1.6) {
+        return 2.28 * pow(abs(x), -1.3);
+    }
+    float p = -0.4 + 0.8393 * exp(-0.567 * log(x * x));
+    return pow(10.0, p);
+}
+
+float donelanBanner(float theta, float omega, float peakOmega)
+{
+    float beta = donelanBannerBeta(omega / peakOmega);
+    float sech = 1.0 / cosh(beta * theta);
+    return beta / 2.0 / tanh(beta * PI) * sech * sech;
+}
+
+float cosine2s(float theta, float s)
+{
+    return normalizationFactor(s) * pow(abs(cos(0.5 * theta)), 2.0 * s);
+}
+
+float spreadPower(float omega, float peakOmega)
+{
+    if (omega > peakOmega) {
+        return 9.77 * pow(abs(omega / peakOmega), -2.5);
+    }
+    return 6.97 * pow(abs(omega / peakOmega), 5.0);
+}
+
+float directionSpectrum(float theta, float omega, SpectrumParameters spectrum)
+{
+    float s = spreadPower(omega, spectrum.peakOmega)
+        + 16.0 * tanh(min(omega / spectrum.peakOmega, 20.0)) * spectrum.swell * spectrum.swell;
+    return mix(2.0 / PI * cos(theta) * cos(theta), cosine2s(theta - spectrum.angle, s), spectrum.spreadBlend);
+}
+
+float tmaCorrection(float omega)
+{
+    float omegaH = omega * sqrt(uDepth / uGravity);
+    if (omegaH <= 1.0) {
+        return 0.5 * omegaH * omegaH;
+    }
+    if (omegaH < 2.0) {
+        return 1.0 - 0.5 * (2.0 - omegaH) * (2.0 - omegaH);
+    }
+    return 1.0;
+}
+
+float jonswap(float omega, SpectrumParameters spectrum)
+{
+    float sigma = (omega <= spectrum.peakOmega) ? 0.07 : 0.09;
+    float r = exp(-(omega - spectrum.peakOmega) * (omega - spectrum.peakOmega)
+        / 2.0 / sigma / sigma / spectrum.peakOmega / spectrum.peakOmega);
+
+    float oneOverOmega = 1.0 / omega;
+    float peakOmegaOverOmega = spectrum.peakOmega / omega;
+    return spectrum.scale * tmaCorrection(omega) * spectrum.alpha * uGravity * uGravity
+        * oneOverOmega * oneOverOmega * oneOverOmega * oneOverOmega * oneOverOmega
+        * exp(-1.25 * peakOmegaOverOmega * peakOmegaOverOmega * peakOmegaOverOmega * peakOmegaOverOmega)
+        * pow(abs(spectrum.gamma), r);
+}
+
+float shortWavesFade(float kLength, SpectrumParameters spectrum)
+{
+    return exp(-spectrum.shortWavesFade * spectrum.shortWavesFade * kLength * kLength);
+}
+
+void main()
+{
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (id.x >= uN || id.y >= uN) {
+        return;
+    }
+
+    uint seed = uint(id.x) + uint(uN) * uint(id.y) + uint(uN) + uint(uSeed);
+    float halfN = float(uN) / 2.0;
+
+    for (uint i = 0u; i < 4u; ++i) {
+        float deltaK = 2.0 * PI / uLengthScales[i];
+        vec2 k = (vec2(id) - halfN) * deltaK;
+        float kLength = length(k);
+
+        seed += i + uint(hash(seed) * 10.0);
+        vec4 u = vec4(hash(seed), hash(seed * 2u), hash(seed * 3u), hash(seed * 4u));
+        vec2 gauss1 = uniformToGaussian(u.x, u.y);
+        vec2 gauss2 = uniformToGaussian(u.z, u.w);
+
+        if (uLowCutoff <= kLength && kLength <= uHighCutoff) {
+            float kAngle = atan(k.y, k.x);
+            float omega = dispersion(kLength);
+            float dOmegadk = dispersionDerivative(kLength);
+
+            SpectrumParameters s0 = spectrums[i * 2u];
+            float spectrum = jonswap(omega, s0) * directionSpectrum(kAngle, omega, s0) * shortWavesFade(kLength, s0);
+
+            SpectrumParameters s1 = spectrums[i * 2u + 1u];
+            if (s1.scale > 0.0) {
+                spectrum += jonswap(omega, s1) * directionSpectrum(kAngle, omega, s1) * shortWavesFade(kLength, s1);
+            }
+
+            vec2 amplitude = vec2(gauss2.x, gauss1.y) * sqrt(2.0 * spectrum * abs(dOmegadk) / kLength * deltaK * deltaK);
+            imageStore(uInitialSpectrum, ivec3(id, int(i)), vec4(amplitude, 0.0, 0.0));
+        } else {
+            imageStore(uInitialSpectrum, ivec3(id, int(i)), vec4(0.0));
+        }
+    }
+}

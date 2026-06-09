@@ -1,71 +1,103 @@
 #pragma once
 
+#include "Shader.h"
+
 #include <glm/glm.hpp>
 
-#include <complex>
-#include <filesystem>
-#include <vector>
+#include <array>
 
-struct SpectrumParameters {
-    float gravity = 9.81f;
-    float windSpeed = 12.0f;
-    glm::vec2 windDirection = glm::normalize(glm::vec2(1.0f, 0.28f));
-    float fetch = 80000.0f;
-    float gamma = 3.3f;
-    float amplitudeScale = 0.75f;
-    float lowCutoff = 0.015f;
-    float highCutoff = 3.25f;
-    float directionalSpreadPower = 6.0f;
+// Artist-facing JONSWAP spectrum description for a single wave system.
+struct OceanDisplaySpectrum {
+    float scale = 0.0f;
+    float windSpeed = 1.0f;
+    float windDirectionDeg = 0.0f;
+    float fetch = 100000.0f;
+    float spreadBlend = 1.0f;
+    float swell = 0.2f;
+    float peakEnhancement = 3.3f;
+    float shortWavesFade = 0.01f;
 };
 
-struct FftOceanConfig {
-    int resolution = 256;
-    float patchLength = 520.0f;
-    unsigned int seed = 1337u;
+// One FFT cascade: a periodic patch of a given world size plus the two wave
+// systems whose energy lives in that band.
+struct OceanCascade {
+    float lengthScale = 256.0f;
+    float tile = 1.0f;
+    OceanDisplaySpectrum primary;
+    OceanDisplaySpectrum secondary; // scale <= 0 disables the second system
 };
 
-struct FftSpectrumStats {
-    float maxMagnitude = 0.0f;
-    float averageMagnitude = 0.0f;
-    float totalEnergy = 0.0f;
-    bool hasInvalidValues = false;
-};
-
-struct PrototypeHeightField {
-    int resolution = 0;
-    float patchLength = 0.0f;
-    float minHeight = 0.0f;
-    float maxHeight = 0.0f;
-    std::vector<float> heights;
-    std::vector<glm::vec2> slopes;
-    std::vector<glm::vec2> displacements;
-    std::vector<float> foam;
-
-    float sample(float x, float z) const;
-    glm::vec2 sampleSlope(float x, float z) const;
-    glm::vec2 sampleDisplacement(float x, float z) const;
-    float sampleFoam(float x, float z) const;
-};
-
+// GPU FFT ocean simulation. Owns the cascade texture arrays and the compute
+// passes that turn a JONSWAP spectrum into displacement, slope and foam maps.
+// Mirrors the structure of the reference Unity project (Acerola / gasgiant).
 class FftOcean {
 public:
-    FftOcean(FftOceanConfig config, SpectrumParameters spectrum);
+    static constexpr int kResolution = 512;
+    static constexpr int kCascadeCount = 4;
 
-    const FftOceanConfig& config() const { return config_; }
-    const SpectrumParameters& spectrum() const { return spectrum_; }
-    const FftSpectrumStats& stats() const { return stats_; }
-    const std::vector<std::complex<float>>& initialSpectrum() const { return initialSpectrum_; }
+    FftOcean();
+    ~FftOcean();
 
-    PrototypeHeightField buildPrototypeHeightField(int outputResolution, float timeSeconds) const;
-    void saveSpectrumDebugImage(const std::filesystem::path& path) const;
+    FftOcean(const FftOcean&) = delete;
+    FftOcean& operator=(const FftOcean&) = delete;
+
+    // Runs the time-evolution -> IFFT -> assemble pipeline for this frame.
+    void update(float time);
+
+    unsigned int displacementArray() const { return displacementTexture_; }
+    unsigned int slopeArray() const { return slopeTexture_; }
+
+    int cascadeCount() const { return kCascadeCount; }
+    const std::array<float, kCascadeCount>& lengthScales() const { return lengthScales_; }
+    const std::array<float, kCascadeCount>& tiles() const { return tiles_; }
+    glm::vec2 lambda() const { return lambda_; }
 
 private:
-    float jonswapSpectrum(const glm::vec2& k) const;
-    void generateInitialSpectrum();
-    void updateStats();
+    // Packed layout matching the std430 SSBO consumed by the spectrum shaders.
+    struct SpectrumParameters {
+        float scale;
+        float angle;
+        float spreadBlend;
+        float swell;
+        float alpha;
+        float peakOmega;
+        float gamma;
+        float shortWavesFade;
+    };
 
-    FftOceanConfig config_;
-    SpectrumParameters spectrum_;
-    std::vector<std::complex<float>> initialSpectrum_;
-    FftSpectrumStats stats_;
+    void createTextures();
+    void uploadSpectrumBuffer();
+    void generateInitialSpectrum();
+    void setLengthScaleUniform(const Shader& shader) const;
+    SpectrumParameters toSpectrumParameters(const OceanDisplaySpectrum& settings) const;
+
+    unsigned int initialSpectrumTexture_ = 0;
+    unsigned int spectrumTexture_ = 0;
+    unsigned int displacementTexture_ = 0;
+    unsigned int slopeTexture_ = 0;
+    unsigned int spectrumBuffer_ = 0;
+
+    Shader initShader_;
+    Shader packShader_;
+    Shader updateShader_;
+    Shader fftHorizontalShader_;
+    Shader fftVerticalShader_;
+    Shader assembleShader_;
+
+    std::array<OceanCascade, kCascadeCount> cascades_;
+    std::array<float, kCascadeCount> lengthScales_;
+    std::array<float, kCascadeCount> tiles_;
+
+    glm::vec2 lambda_ = glm::vec2(1.0f, 1.0f);
+    int seed_ = 1337;
+    float gravity_ = 9.81f;
+    float depth_ = 500.0f;
+    float lowCutoff_ = 0.0001f;
+    float highCutoff_ = 9000.0f;
+    float repeatTime_ = 200.0f;
+
+    float foamBias_ = -0.8f;
+    float foamThreshold_ = 0.0f;
+    float foamAdd_ = 0.35f;
+    float foamDecayRate_ = 0.06f;
 };

@@ -1,0 +1,60 @@
+#version 430 core
+
+// Turns the inverse-transformed spectrum into the final displacement map
+// (xyz displacement + accumulated foam) and slope map. Foam is driven by the
+// folding Jacobian of the horizontal displacement and decays over time.
+// Ported from CS_AssembleMaps.
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (rgba32f, binding = 0) uniform readonly image2DArray uSpectrum;
+layout (rgba16f, binding = 1) uniform image2DArray uDisplacement;
+layout (rg16f, binding = 2) uniform writeonly image2DArray uSlope;
+
+uniform int uN;
+uniform vec2 uLambda;
+uniform float uFoamDecayRate;
+uniform float uFoamBias;
+uniform float uFoamThreshold;
+uniform float uFoamAdd;
+
+vec4 permute(vec4 data, ivec2 id)
+{
+    return data * (1.0 - 2.0 * float((id.x + id.y) % 2));
+}
+
+void main()
+{
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (id.x >= uN || id.y >= uN) {
+        return;
+    }
+
+    for (int i = 0; i < 4; ++i) {
+        vec4 htildeDisplacement = permute(imageLoad(uSpectrum, ivec3(id, i * 2)), id);
+        vec4 htildeSlope = permute(imageLoad(uSpectrum, ivec3(id, i * 2 + 1)), id);
+
+        vec2 dxdz = htildeDisplacement.rg;
+        vec2 dydxz = htildeDisplacement.ba;
+        vec2 dyxdyz = htildeSlope.rg;
+        vec2 dxxdzz = htildeSlope.ba;
+
+        float jacobian = (1.0 + uLambda.x * dxxdzz.x) * (1.0 + uLambda.y * dxxdzz.y)
+            - uLambda.x * uLambda.y * dydxz.y * dydxz.y;
+
+        vec3 displacement = vec3(uLambda.x * dxdz.x, dydxz.x, uLambda.y * dxdz.y);
+        vec2 slopes = dyxdyz.xy / (1.0 + abs(dxxdzz * uLambda));
+
+        float foam = imageLoad(uDisplacement, ivec3(id, i)).a;
+        foam *= exp(-uFoamDecayRate);
+        foam = clamp(foam, 0.0, 1.0);
+
+        float biasedJacobian = max(0.0, -(jacobian - uFoamBias));
+        if (biasedJacobian > uFoamThreshold) {
+            foam += uFoamAdd * biasedJacobian;
+        }
+
+        imageStore(uDisplacement, ivec3(id, i), vec4(displacement, foam));
+        imageStore(uSlope, ivec3(id, i), vec4(slopes, 0.0, 0.0));
+    }
+}
