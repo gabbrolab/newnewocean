@@ -1,4 +1,5 @@
 build/
+build_verify/
 captures/
 .vs/
 out/
@@ -6,4 +7,3 @@ out/
 *.suo
 *.VC.db
 *.VC.opendb
-

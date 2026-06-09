@@ -18,6 +18,7 @@ out vec4 FragColor;
 const float PI = 3.14159265359;
 const float GRAVITY = 9.81;
 const int MAX_WAVES = 12;
+const int DETAIL_NORMAL_START = 6;
 
 struct GerstnerWave {
     vec2 direction;
@@ -115,6 +116,11 @@ vec3 analyticalNormal(vec3 position)
         float cosTheta = cos(theta);
         float q = wave.steepness;
         float a = wave.amplitude;
+        if (i >= DETAIL_NORMAL_START) {
+            float detailFade = 1.0 - smoothstep(12.0, 72.0, length(uCameraPosition.xz - position.xz));
+            q *= detailFade * 0.70;
+            a *= detailFade * 0.70;
+        }
 
         if (uWaveMode == 1) {
             tangentX.y += a * k * direction.x * cosTheta;
@@ -166,19 +172,16 @@ void main()
     vec3 halfwayDirection = normalize(lightDirection + viewDirection);
 
     float diffuse = max(dot(normal, lightDirection), 0.0);
-    float specular = pow(max(dot(normal, halfwayDirection), 0.0), 140.0);
+    float distanceToCamera = length(uCameraPosition - vWorldPosition);
+    float specular = pow(max(dot(normal, halfwayDirection), 0.0), 68.0);
+    specular *= 1.0 - smoothstep(70.0, 220.0, distanceToCamera);
     float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
     vec3 reflectedDirection = reflect(-viewDirection, normal);
     vec3 reflection = skyEnvironment(reflectedDirection);
     float slope = clamp(1.0 - normal.y, 0.0, 1.0);
-    vec2 swellDirection = normalize(vec2(1.0, 0.15));
-    vec2 crestAcross = vec2(-swellDirection.y, swellDirection.x);
-    float alongCrest = dot(vWorldPosition.xz, crestAcross);
-    float acrossCrest = dot(vWorldPosition.xz, swellDirection);
     float crestMask = smoothstep(0.20, 1.35, vWorldPosition.y) * smoothstep(0.035, 0.18, slope);
-    float longStreaks = smoothstep(0.38, 0.76, fbmNoise(vec2(alongCrest * 0.055, acrossCrest * 0.018 + uTime * 0.035)));
-    float fineBreakup = smoothstep(0.42, 0.82, fbmNoise(vWorldPosition.xz * 0.18 + vec2(uTime * 0.025, -uTime * 0.018)));
-    float foam = clamp(crestMask * (0.42 + 0.58 * longStreaks) * (0.55 + 0.45 * fineBreakup), 0.0, 1.0);
+    float foamDistanceFade = 1.0 - smoothstep(45.0, 120.0, distanceToCamera);
+    float foam = clamp(crestMask * foamDistanceFade * 0.20, 0.0, 1.0);
 
     vec3 deepWater = vec3(0.010, 0.070, 0.095);
     vec3 shallowWater = vec3(0.035, 0.185, 0.225);
@@ -188,13 +191,12 @@ void main()
 
     float gridFade = smoothstep(380.0, 40.0, length(vWorldPosition.xz));
     vec3 color = waterColor * (0.18 + 0.58 * diffuse);
-    color = mix(color, reflection, clamp(fresnel * 1.15, 0.0, 0.62));
-    color += sunColor * specular * (0.24 + 2.0 * fresnel);
-    color += glintColor * fresnel * 0.08;
-    color = mix(color, vec3(0.82, 0.96, 0.93), foam * 0.62);
+    color = mix(color, reflection, clamp(fresnel * 0.95, 0.0, 0.50));
+    color += sunColor * specular * (0.14 + 1.05 * fresnel);
+    color += glintColor * fresnel * 0.05;
+    color = mix(color, vec3(0.82, 0.96, 0.93), foam);
     color = mix(color * 0.65, color, gridFade);
 
-    float distanceToCamera = length(uCameraPosition - vWorldPosition);
     float heightFog = smoothstep(8.0, -2.0, vWorldPosition.y);
     float fog = 1.0 - exp(-distanceToCamera * 0.018);
     fog = clamp(fog * (0.35 + 0.65 * heightFog), 0.0, 0.82);
