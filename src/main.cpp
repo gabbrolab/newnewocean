@@ -243,7 +243,7 @@ int main(int argc, char** argv)
 
     Shader oceanShader("shaders/ocean.vert", "shaders/ocean.frag");
     Shader skyShader("shaders/sky.vert", "shaders/sky.frag");
-    Ocean ocean(220.0f, 512);
+    Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
 
     auto previousTime = std::chrono::steady_clock::now();
@@ -268,7 +268,7 @@ int main(int argc, char** argv)
             glm::radians(62.0f),
             static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight),
             0.1f,
-            400.0f);
+            1400.0f);
 
         glDepthFunc(GL_LEQUAL);
         skyShader.use();
