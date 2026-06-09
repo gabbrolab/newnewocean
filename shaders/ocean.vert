@@ -10,6 +10,7 @@ uniform int uWaveMode;
 uniform int uWaveCount;
 
 out vec3 vWorldPosition;
+out vec3 vNormal;
 
 const float PI = 3.14159265359;
 const float GRAVITY = 9.81;
@@ -51,10 +52,48 @@ vec3 applyWaves(vec3 position)
     return displaced;
 }
 
+vec3 analyticalNormal(vec3 position)
+{
+    vec3 tangentX = vec3(1.0, 0.0, 0.0);
+    vec3 tangentZ = vec3(0.0, 0.0, 1.0);
+
+    for (int i = 0; i < MAX_WAVES; ++i) {
+        if (i >= uWaveCount) {
+            break;
+        }
+
+        GerstnerWave wave = uWaves[i];
+        vec2 direction = normalize(wave.direction);
+        float k = 2.0 * PI / wave.wavelength;
+        float omega = sqrt(GRAVITY * k);
+        float theta = k * dot(direction, position.xz) - omega * uTime + wave.phase;
+        float sinTheta = sin(theta);
+        float cosTheta = cos(theta);
+        float q = wave.steepness;
+        float a = wave.amplitude;
+
+        if (uWaveMode == 1) {
+            tangentX.y += a * k * direction.x * cosTheta;
+            tangentZ.y += a * k * direction.y * cosTheta;
+        } else if (uWaveMode == 2) {
+            tangentX.x += -q * direction.x * direction.x * sinTheta;
+            tangentX.y += a * k * direction.x * cosTheta;
+            tangentX.z += -q * direction.x * direction.y * sinTheta;
+
+            tangentZ.x += -q * direction.y * direction.x * sinTheta;
+            tangentZ.y += a * k * direction.y * cosTheta;
+            tangentZ.z += -q * direction.y * direction.y * sinTheta;
+        }
+    }
+
+    return normalize(cross(tangentZ, tangentX));
+}
+
 void main()
 {
     vec3 displaced = applyWaves(aPosition);
     vec4 worldPosition = uModel * vec4(displaced, 1.0);
     vWorldPosition = worldPosition.xyz;
+    vNormal = mat3(transpose(inverse(uModel))) * analyticalNormal(aPosition);
     gl_Position = uProjection * uView * worldPosition;
 }

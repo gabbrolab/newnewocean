@@ -251,6 +251,8 @@ int main(int argc, char** argv)
         oceanShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
         oceanShader.setInt("uWaveMode", waveMode);
         uploadWaves(oceanShader, waves);
+        oceanShader.setVec3("uCameraPosition", camera.position());
+        oceanShader.setVec3("uLightDirection", glm::normalize(glm::vec3(-0.42f, 0.74f, -0.52f)));
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
         ocean.draw();
