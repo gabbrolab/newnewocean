@@ -30,7 +30,7 @@ const bool ENABLE_NORMAL_DETAIL = true;
 
 const float SPECULAR_STRENGTH = 0.26;
 const float REFLECTION_STRENGTH = 0.64;
-const float FOAM_STRENGTH = 0.92;
+const float FOAM_STRENGTH = 1.85;
 const float MICRO_NORMAL_STRENGTH = 0.78;
 
 struct GerstnerWave {
@@ -196,10 +196,10 @@ void main()
     float slope = clamp(1.0 - normal.y, 0.0, 1.0);
     vec2 swellDirection = normalize(vec2(1.0, 0.15));
     vec2 crestDirection = vec2(-swellDirection.y, swellDirection.x);
-    float crestMask = smoothstep(-0.05, 1.05, vWorldPosition.y) * smoothstep(0.025, 0.130, slope);
+    float crestMask = smoothstep(-0.22, 0.92, vWorldPosition.y) * smoothstep(0.015, 0.105, slope);
     float longFoam = sin(dot(vWorldPosition.xz, crestDirection) * 0.34 + dot(vWorldPosition.xz, swellDirection) * 0.055);
-    float brokenFoam = smoothstep(-0.10, 0.72, longFoam + fbmNoise(vWorldPosition.xz * 0.075 + uTime * 0.025) * 0.55);
-    float foamDistanceFade = 1.0 - smoothstep(65.0, 210.0, distanceToCamera);
+    float brokenFoam = smoothstep(-0.32, 0.58, longFoam + fbmNoise(vWorldPosition.xz * 0.075 + uTime * 0.025) * 0.55);
+    float foamDistanceFade = 1.0 - smoothstep(90.0, 260.0, distanceToCamera);
     float foam = clamp(crestMask * brokenFoam * foamDistanceFade * FOAM_STRENGTH, 0.0, 1.0);
     foam *= ENABLE_FOAM ? 1.0 : 0.0;
 
@@ -225,7 +225,7 @@ void main()
     color = mix(color, reflection, clamp(grazingReflection, 0.0, 0.48));
     color += sunColor * specular * (0.14 + 1.65 * fresnel);
     color += glintColor * fresnel * 0.026;
-    color = mix(color, vec3(0.84, 0.95, 0.91), foam * 0.82);
+    color = mix(color, vec3(0.90, 0.98, 0.95), foam * 0.95);
     color = mix(color * 0.65, color, gridFade);
 
     float heightFog = smoothstep(8.0, -2.0, vWorldPosition.y);
