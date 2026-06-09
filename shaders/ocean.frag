@@ -12,6 +12,8 @@ uniform vec3 uFogColor;
 uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
+uniform sampler2D uFftSlopeMap;
+uniform float uFftPatchLength;
 
 out vec4 FragColor;
 
@@ -187,12 +189,21 @@ void main()
     float distanceToCamera = length(uCameraPosition - vWorldPosition);
 
     if (uWaveMode == 3) {
+        vec2 fftUv = fract(vSourcePosition.xz / uFftPatchLength);
+        vec2 fftSlope = texture(uFftSlopeMap, fftUv).xy;
+        normal = normalize(vec3(-fftSlope.x, 1.0, -fftSlope.y));
+        float diffuse = max(dot(normal, lightDirection), 0.0);
+        float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
+        vec3 reflectedDirection = reflect(-viewDirection, normal);
+        vec3 reflection = skyEnvironment(reflectedDirection);
         float height01 = smoothstep(-2.2, 2.2, vWorldPosition.y);
-        float contour = smoothstep(0.045, 0.055, abs(fract(vWorldPosition.y * 1.6) - 0.5));
+        float contour = smoothstep(0.047, 0.055, abs(fract(vWorldPosition.y * 1.6) - 0.5));
         vec3 trough = vec3(0.018, 0.085, 0.105);
         vec3 crest = vec3(0.42, 0.55, 0.52);
-        vec3 color = mix(trough, crest, height01);
-        color += vec3(0.08, 0.14, 0.13) * contour * 0.18;
+        vec3 color = mix(trough, crest, height01) * (0.46 + diffuse * 0.46);
+        color = mix(color, reflection, clamp(fresnel * 0.58, 0.0, 0.34));
+        color += vec3(0.95, 0.78, 0.52) * pow(max(dot(normal, halfwayDirection), 0.0), 72.0) * 0.20;
+        color += vec3(0.08, 0.14, 0.13) * contour * 0.12;
         float fog = clamp(1.0 - exp(-distanceToCamera * 0.014), 0.0, 0.82);
         color = mix(color, uFogColor, fog);
         color = acesToneMap(color * 0.95);

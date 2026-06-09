@@ -49,6 +49,32 @@ float PrototypeHeightField::sample(float x, float z) const
     return hx0 + (hx1 - hx0) * tz;
 }
 
+glm::vec2 PrototypeHeightField::sampleSlope(float x, float z) const
+{
+    if (resolution <= 0 || slopes.empty() || patchLength <= 0.0f) {
+        return glm::vec2(0.0f);
+    }
+
+    const float uWrapped = x / patchLength - std::floor(x / patchLength);
+    const float vWrapped = z / patchLength - std::floor(z / patchLength);
+    const float fx = uWrapped * static_cast<float>(resolution);
+    const float fz = vWrapped * static_cast<float>(resolution);
+    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
+    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
+    const int x1 = (x0 + 1) % resolution;
+    const int z1 = (z0 + 1) % resolution;
+    const float tx = fx - std::floor(fx);
+    const float tz = fz - std::floor(fz);
+
+    const glm::vec2 s00 = slopes[static_cast<size_t>(z0 * resolution + x0)];
+    const glm::vec2 s10 = slopes[static_cast<size_t>(z0 * resolution + x1)];
+    const glm::vec2 s01 = slopes[static_cast<size_t>(z1 * resolution + x0)];
+    const glm::vec2 s11 = slopes[static_cast<size_t>(z1 * resolution + x1)];
+    const glm::vec2 sx0 = s00 + (s10 - s00) * tx;
+    const glm::vec2 sx1 = s01 + (s11 - s01) * tx;
+    return sx0 + (sx1 - sx0) * tz;
+}
+
 FftOcean::FftOcean(FftOceanConfig config, SpectrumParameters spectrum)
     : config_(config),
       spectrum_(spectrum)
@@ -162,6 +188,7 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
     field.resolution = outputResolution;
     field.patchLength = config_.patchLength;
     field.heights.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
+    field.slopes.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
     field.minHeight = std::numeric_limits<float>::max();
     field.maxHeight = std::numeric_limits<float>::lowest();
 
@@ -204,6 +231,23 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
             field.heights[static_cast<size_t>(z * m + x)] = finalHeight;
             field.minHeight = std::min(field.minHeight, finalHeight);
             field.maxHeight = std::max(field.maxHeight, finalHeight);
+        }
+    }
+
+    const float cellSize = config_.patchLength / static_cast<float>(m);
+    for (int z = 0; z < m; ++z) {
+        const int zPrev = (z - 1 + m) % m;
+        const int zNext = (z + 1) % m;
+        for (int x = 0; x < m; ++x) {
+            const int xPrev = (x - 1 + m) % m;
+            const int xNext = (x + 1) % m;
+            const float heightLeft = field.heights[static_cast<size_t>(z * m + xPrev)];
+            const float heightRight = field.heights[static_cast<size_t>(z * m + xNext)];
+            const float heightDown = field.heights[static_cast<size_t>(zPrev * m + x)];
+            const float heightUp = field.heights[static_cast<size_t>(zNext * m + x)];
+            field.slopes[static_cast<size_t>(z * m + x)] = glm::vec2(
+                (heightRight - heightLeft) / (2.0f * cellSize),
+                (heightUp - heightDown) / (2.0f * cellSize));
         }
     }
 

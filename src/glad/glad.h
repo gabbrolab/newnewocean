@@ -99,6 +99,9 @@ extern "C" {
 #ifndef GL_READ_WRITE
 #define GL_READ_WRITE 0x88BA
 #endif
+#ifndef GL_TEXTURE0
+#define GL_TEXTURE0 0x84C0
+#endif
 
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
@@ -135,6 +138,7 @@ typedef void (APIENTRYP PFNGLUNIFORM3FVPROC)(GLint location, GLsizei count, cons
 typedef void (APIENTRYP PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
 typedef void (APIENTRYP PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
 typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
+typedef void (APIENTRYP PFNGLACTIVETEXTUREPROC)(GLenum texture);
 typedef void (APIENTRYP PFNGLDISPATCHCOMPUTEPROC)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
 typedef void (APIENTRYP PFNGLMEMORYBARRIERPROC)(GLbitfield barriers);
 typedef void (APIENTRYP PFNGLBINDIMAGETEXTUREPROC)(GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format);
@@ -169,6 +173,7 @@ extern PFNGLUNIFORM3FVPROC glad_glUniform3fv;
 extern PFNGLUNIFORM1FPROC glad_glUniform1f;
 extern PFNGLUNIFORM1IPROC glad_glUniform1i;
 extern PFNGLDEPTHFUNCPROC glad_glDepthFunc;
+extern PFNGLACTIVETEXTUREPROC glad_glActiveTexture;
 extern PFNGLDISPATCHCOMPUTEPROC glad_glDispatchCompute;
 extern PFNGLMEMORYBARRIERPROC glad_glMemoryBarrier;
 extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
@@ -203,6 +208,7 @@ extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
 #define glUniform1f glad_glUniform1f
 #define glUniform1i glad_glUniform1i
 #define glDepthFunc glad_glDepthFunc
+#define glActiveTexture glad_glActiveTexture
 #define glDispatchCompute glad_glDispatchCompute
 #define glMemoryBarrier glad_glMemoryBarrier
 #define glBindImageTexture glad_glBindImageTexture
