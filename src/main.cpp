@@ -252,6 +252,10 @@ int main(int argc, char** argv)
     Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
     const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
+    const PrototypeHeightField fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, 0.0f);
+    Ocean fftPrototypeOcean(800.0f, 384, [&fftPrototypeHeight](float x, float z) {
+        return fftPrototypeHeight.sample(x, z);
+    });
     const FftSpectrumStats& fftStats = fftOcean.stats();
     std::cout << "FFT spectrum: "
               << fftOcean.config().resolution << "x" << fftOcean.config().resolution
@@ -261,6 +265,8 @@ int main(int argc, char** argv)
               << ", energy " << fftStats.totalEnergy
               << (fftStats.hasInvalidValues ? " (invalid values detected)" : "")
               << "\n";
+    std::cout << "FFT prototype height: min " << fftPrototypeHeight.minHeight
+              << ", max " << fftPrototypeHeight.maxHeight << "\n";
     fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
 
     auto previousTime = std::chrono::steady_clock::now();
@@ -308,13 +314,21 @@ int main(int argc, char** argv)
         oceanShader.setVec3("uFogColor", glm::vec3(0.026f, 0.060f, 0.082f));
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
-        ocean.draw();
+        if (waveMode == 3) {
+            fftPrototypeOcean.draw();
+        } else {
+            ocean.draw();
+        }
 
         if (options.showWire) {
             oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
             oceanShader.setFloat("uAlpha", 0.45f);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            ocean.draw();
+            if (waveMode == 3) {
+                fftPrototypeOcean.draw();
+            } else {
+                ocean.draw();
+            }
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 

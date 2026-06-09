@@ -184,9 +184,24 @@ void main()
     vec3 lightDirection = normalize(uLightDirection);
     vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
     vec3 halfwayDirection = normalize(lightDirection + viewDirection);
+    float distanceToCamera = length(uCameraPosition - vWorldPosition);
+
+    if (uWaveMode == 3) {
+        float height01 = smoothstep(-2.2, 2.2, vWorldPosition.y);
+        float contour = smoothstep(0.045, 0.055, abs(fract(vWorldPosition.y * 1.6) - 0.5));
+        vec3 trough = vec3(0.018, 0.085, 0.105);
+        vec3 crest = vec3(0.42, 0.55, 0.52);
+        vec3 color = mix(trough, crest, height01);
+        color += vec3(0.08, 0.14, 0.13) * contour * 0.18;
+        float fog = clamp(1.0 - exp(-distanceToCamera * 0.014), 0.0, 0.82);
+        color = mix(color, uFogColor, fog);
+        color = acesToneMap(color * 0.95);
+        color = pow(color, vec3(1.0 / 2.2));
+        FragColor = vec4(color, uAlpha);
+        return;
+    }
 
     float diffuse = ENABLE_DIFFUSE ? max(dot(normal, lightDirection), 0.0) : 0.0;
-    float distanceToCamera = length(uCameraPosition - vWorldPosition);
     float specular = pow(max(dot(normal, halfwayDirection), 0.0), 104.0);
     specular *= 1.0 - smoothstep(85.0, 260.0, distanceToCamera);
     specular *= ENABLE_SPECULAR ? SPECULAR_STRENGTH : 0.0;

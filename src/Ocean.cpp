@@ -3,6 +3,11 @@
 #include <vector>
 
 Ocean::Ocean(float sizeMeters, int resolution)
+    : Ocean(sizeMeters, resolution, {})
+{
+}
+
+Ocean::Ocean(float sizeMeters, int resolution, const std::function<float(float, float)>& heightSampler)
     : sizeMeters_(sizeMeters),
       resolution_(resolution)
 {
@@ -18,7 +23,7 @@ Ocean::Ocean(float sizeMeters, int resolution)
             const float v = static_cast<float>(z) / static_cast<float>(resolution);
             vertices.push_back({
                 -halfSize + u * sizeMeters,
-                0.0f,
+                heightSampler ? heightSampler(-halfSize + u * sizeMeters, -halfSize + v * sizeMeters) : 0.0f,
                 -halfSize + v * sizeMeters
             });
         }
@@ -49,4 +54,3 @@ void Ocean::draw() const
 {
     mesh_->draw();
 }
-

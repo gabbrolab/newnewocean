@@ -23,6 +23,32 @@ unsigned char toByte(float value)
 }
 }
 
+float PrototypeHeightField::sample(float x, float z) const
+{
+    if (resolution <= 0 || heights.empty() || patchLength <= 0.0f) {
+        return 0.0f;
+    }
+
+    const float uWrapped = x / patchLength - std::floor(x / patchLength);
+    const float vWrapped = z / patchLength - std::floor(z / patchLength);
+    const float fx = uWrapped * static_cast<float>(resolution);
+    const float fz = vWrapped * static_cast<float>(resolution);
+    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
+    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
+    const int x1 = (x0 + 1) % resolution;
+    const int z1 = (z0 + 1) % resolution;
+    const float tx = fx - std::floor(fx);
+    const float tz = fz - std::floor(fz);
+
+    const float h00 = heights[static_cast<size_t>(z0 * resolution + x0)];
+    const float h10 = heights[static_cast<size_t>(z0 * resolution + x1)];
+    const float h01 = heights[static_cast<size_t>(z1 * resolution + x0)];
+    const float h11 = heights[static_cast<size_t>(z1 * resolution + x1)];
+    const float hx0 = h00 + (h10 - h00) * tx;
+    const float hx1 = h01 + (h11 - h01) * tx;
+    return hx0 + (hx1 - hx0) * tz;
+}
+
 FftOcean::FftOcean(FftOceanConfig config, SpectrumParameters spectrum)
     : config_(config),
       spectrum_(spectrum)
@@ -121,6 +147,67 @@ void FftOcean::updateStats()
         : static_cast<float>(totalMagnitude / static_cast<double>(initialSpectrum_.size()));
     stats_.totalEnergy = static_cast<float>(totalEnergy);
     stats_.hasInvalidValues = invalid;
+}
+
+PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, float timeSeconds) const
+{
+    if (outputResolution <= 0 || (outputResolution & (outputResolution - 1)) != 0) {
+        throw std::runtime_error("Prototype FFT height field resolution must be a positive power of two.");
+    }
+    if (outputResolution > config_.resolution) {
+        throw std::runtime_error("Prototype FFT height field cannot exceed the source spectrum resolution.");
+    }
+
+    PrototypeHeightField field;
+    field.resolution = outputResolution;
+    field.patchLength = config_.patchLength;
+    field.heights.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
+    field.minHeight = std::numeric_limits<float>::max();
+    field.maxHeight = std::numeric_limits<float>::lowest();
+
+    const int n = config_.resolution;
+    const int m = outputResolution;
+    const float dk = twoPi / config_.patchLength;
+    const float dx = config_.patchLength / static_cast<float>(m);
+    const float normalization = 1.0f / static_cast<float>(m * m);
+
+    for (int z = 0; z < m; ++z) {
+        for (int x = 0; x < m; ++x) {
+            const glm::vec2 position(
+                (static_cast<float>(x) - static_cast<float>(m) * 0.5f) * dx,
+                (static_cast<float>(z) - static_cast<float>(m) * 0.5f) * dx);
+
+            std::complex<float> height(0.0f, 0.0f);
+            for (int ky = -m / 2; ky < m / 2; ++ky) {
+                for (int kx = -m / 2; kx < m / 2; ++kx) {
+                    if (kx == 0 && ky == 0) {
+                        continue;
+                    }
+
+                    const int sourceX = (kx + n) % n;
+                    const int sourceY = (ky + n) % n;
+                    const int sourceNegX = (-kx + n) % n;
+                    const int sourceNegY = (-ky + n) % n;
+                    const std::complex<float> h0 = initialSpectrum_[static_cast<size_t>(sourceY * n + sourceX)];
+                    const std::complex<float> h0Neg = initialSpectrum_[static_cast<size_t>(sourceNegY * n + sourceNegX)];
+                    const glm::vec2 k(static_cast<float>(kx) * dk, static_cast<float>(ky) * dk);
+                    const float omega = std::sqrt(spectrum_.gravity * glm::length(k));
+                    const std::complex<float> positive(std::cos(omega * timeSeconds), std::sin(omega * timeSeconds));
+                    const std::complex<float> negative(std::cos(-omega * timeSeconds), std::sin(-omega * timeSeconds));
+                    const std::complex<float> evolved = h0 * positive + std::conj(h0Neg) * negative;
+                    const float phase = glm::dot(k, position);
+                    height += evolved * std::complex<float>(std::cos(phase), std::sin(phase));
+                }
+            }
+
+            const float finalHeight = height.real() * normalization * 110.0f;
+            field.heights[static_cast<size_t>(z * m + x)] = finalHeight;
+            field.minHeight = std::min(field.minHeight, finalHeight);
+            field.maxHeight = std::max(field.maxHeight, finalHeight);
+        }
+    }
+
+    return field;
 }
 
 void FftOcean::saveSpectrumDebugImage(const std::filesystem::path& path) const
