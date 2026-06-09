@@ -130,6 +130,45 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
     out.write(reinterpret_cast<const char*>(bmp.data()), static_cast<std::streamsize>(bmp.size()));
 }
 
+unsigned int createHeightTexture(const PrototypeHeightField& field)
+{
+    unsigned int texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_R32F,
+        field.resolution,
+        field.resolution,
+        0,
+        GL_RED,
+        GL_FLOAT,
+        field.heights.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
+
+void uploadHeightTexture(unsigned int texture, const PrototypeHeightField& field)
+{
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexSubImage2D(
+        GL_TEXTURE_2D,
+        0,
+        0,
+        0,
+        field.resolution,
+        field.resolution,
+        GL_RED,
+        GL_FLOAT,
+        field.heights.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     std::vector<GerstnerWave> waves = {
@@ -254,9 +293,8 @@ int main(int argc, char** argv)
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
     const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
     PrototypeHeightField fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, 0.0f);
-    Ocean fftPrototypeOcean(800.0f, 384, [&fftPrototypeHeight](float x, float z) {
-        return fftPrototypeHeight.sample(x, z);
-    });
+    Ocean fftPrototypeOcean(800.0f, 384);
+    const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
     const FftSpectrumStats& fftStats = fftOcean.stats();
     const GpuFftStats gpuFftStats = GpuFftSelfTest::runInverseTransform(256);
     std::cout << "FFT spectrum: "
@@ -291,9 +329,7 @@ int main(int argc, char** argv)
 
         if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > 0.055f)) {
             fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, appTime * 0.85f);
-            fftPrototypeOcean.updateHeights([&fftPrototypeHeight](float x, float z) {
-                return fftPrototypeHeight.sample(x, z);
-            });
+            uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
             previousFftUpdateTime = appTime;
         }
 
@@ -325,27 +361,33 @@ int main(int argc, char** argv)
         oceanShader.setMat4("uProjection", projection);
         oceanShader.setFloat("uTime", appTime);
         oceanShader.setInt("uWaveMode", waveMode);
+        oceanShader.setInt("uFftHeightMap", 0);
+        oceanShader.setFloat("uFftPatchLength", fftPrototypeHeight.patchLength);
         uploadWaves(oceanShader, waves);
         oceanShader.setVec3("uCameraPosition", camera.position());
         oceanShader.setVec3("uLightDirection", sunDirection);
         oceanShader.setVec3("uFogColor", glm::vec3(0.026f, 0.060f, 0.082f));
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
+        glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
         if (waveMode == 3) {
             fftPrototypeOcean.draw();
         } else {
             ocean.draw();
         }
+        glBindTexture(GL_TEXTURE_2D, 0);
 
         if (options.showWire) {
             oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
             oceanShader.setFloat("uAlpha", 0.45f);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
             if (waveMode == 3) {
                 fftPrototypeOcean.draw();
             } else {
                 ocean.draw();
             }
+            glBindTexture(GL_TEXTURE_2D, 0);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
@@ -360,6 +402,7 @@ int main(int argc, char** argv)
     }
 
     glfwDestroyWindow(window);
+    glDeleteTextures(1, &fftHeightTexture);
     glfwTerminate();
     return 0;
 }
