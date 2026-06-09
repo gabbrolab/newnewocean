@@ -27,6 +27,9 @@ extern "C" {
 #ifndef GL_STATIC_DRAW
 #define GL_STATIC_DRAW 0x88E4
 #endif
+#ifndef GL_DYNAMIC_DRAW
+#define GL_DYNAMIC_DRAW 0x88E8
+#endif
 #ifndef GL_FRAGMENT_SHADER
 #define GL_FRAGMENT_SHADER 0x8B30
 #endif
@@ -98,6 +101,7 @@ extern "C" {
 #endif
 
 typedef ptrdiff_t GLsizeiptr;
+typedef ptrdiff_t GLintptr;
 typedef char GLchar;
 typedef void* (*GLADloadproc)(const char* name);
 
@@ -107,6 +111,7 @@ typedef void (APIENTRYP PFNGLDELETEVERTEXARRAYSPROC)(GLsizei n, const GLuint* ar
 typedef void (APIENTRYP PFNGLGENBUFFERSPROC)(GLsizei n, GLuint* buffers);
 typedef void (APIENTRYP PFNGLBINDBUFFERPROC)(GLenum target, GLuint buffer);
 typedef void (APIENTRYP PFNGLBUFFERDATAPROC)(GLenum target, GLsizeiptr size, const void* data, GLenum usage);
+typedef void (APIENTRYP PFNGLBUFFERSUBDATAPROC)(GLenum target, GLintptr offset, GLsizeiptr size, const void* data);
 typedef void (APIENTRYP PFNGLDELETEBUFFERSPROC)(GLsizei n, const GLuint* buffers);
 typedef void (APIENTRYP PFNGLENABLEVERTEXATTRIBARRAYPROC)(GLuint index);
 typedef void (APIENTRYP PFNGLVERTEXATTRIBPOINTERPROC)(GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const void* pointer);
@@ -140,6 +145,7 @@ extern PFNGLDELETEVERTEXARRAYSPROC glad_glDeleteVertexArrays;
 extern PFNGLGENBUFFERSPROC glad_glGenBuffers;
 extern PFNGLBINDBUFFERPROC glad_glBindBuffer;
 extern PFNGLBUFFERDATAPROC glad_glBufferData;
+extern PFNGLBUFFERSUBDATAPROC glad_glBufferSubData;
 extern PFNGLDELETEBUFFERSPROC glad_glDeleteBuffers;
 extern PFNGLENABLEVERTEXATTRIBARRAYPROC glad_glEnableVertexAttribArray;
 extern PFNGLVERTEXATTRIBPOINTERPROC glad_glVertexAttribPointer;
@@ -173,6 +179,7 @@ extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
 #define glGenBuffers glad_glGenBuffers
 #define glBindBuffer glad_glBindBuffer
 #define glBufferData glad_glBufferData
+#define glBufferSubData glad_glBufferSubData
 #define glDeleteBuffers glad_glDeleteBuffers
 #define glEnableVertexAttribArray glad_glEnableVertexAttribArray
 #define glVertexAttribPointer glad_glVertexAttribPointer

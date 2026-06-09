@@ -19,6 +19,7 @@ public:
     Mesh& operator=(Mesh&& other) noexcept;
 
     void draw() const;
+    void updateVertices(const std::vector<Vertex>& vertices);
     unsigned int indexCount() const { return indexCount_; }
 
 private:
@@ -26,5 +27,5 @@ private:
     unsigned int vbo_ = 0;
     unsigned int ebo_ = 0;
     unsigned int indexCount_ = 0;
+    unsigned int vertexCount_ = 0;
 };
-

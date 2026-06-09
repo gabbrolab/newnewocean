@@ -253,7 +253,7 @@ int main(int argc, char** argv)
     Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
     const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
-    const PrototypeHeightField fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, 0.0f);
+    PrototypeHeightField fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, 0.0f);
     Ocean fftPrototypeOcean(800.0f, 384, [&fftPrototypeHeight](float x, float z) {
         return fftPrototypeHeight.sample(x, z);
     });
@@ -277,6 +277,7 @@ int main(int argc, char** argv)
     fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
 
     auto previousTime = std::chrono::steady_clock::now();
+    float previousFftUpdateTime = -1.0f;
     int renderedFrames = 0;
     int waveMode = options.waveMode;
 
@@ -286,6 +287,15 @@ int main(int argc, char** argv)
         previousTime = currentTime;
 
         processInput(window, camera, deltaTime, waveMode);
+        const float appTime = static_cast<float>(glfwGetTime());
+
+        if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > 0.055f)) {
+            fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, appTime * 0.85f);
+            fftPrototypeOcean.updateHeights([&fftPrototypeHeight](float x, float z) {
+                return fftPrototypeHeight.sample(x, z);
+            });
+            previousFftUpdateTime = appTime;
+        }
 
         int framebufferWidth = 0;
         int framebufferHeight = 0;
@@ -313,7 +323,7 @@ int main(int argc, char** argv)
         oceanShader.setMat4("uModel", glm::mat4(1.0f));
         oceanShader.setMat4("uView", camera.viewMatrix());
         oceanShader.setMat4("uProjection", projection);
-        oceanShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
+        oceanShader.setFloat("uTime", appTime);
         oceanShader.setInt("uWaveMode", waveMode);
         uploadWaves(oceanShader, waves);
         oceanShader.setVec3("uCameraPosition", camera.position());
