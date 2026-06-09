@@ -28,6 +28,7 @@ PFNGLUNIFORM2FVPROC glad_glUniform2fv = NULL;
 PFNGLUNIFORM3FVPROC glad_glUniform3fv = NULL;
 PFNGLUNIFORM1FPROC glad_glUniform1f = NULL;
 PFNGLUNIFORM1IPROC glad_glUniform1i = NULL;
+PFNGLDEPTHFUNCPROC glad_glDepthFunc = NULL;
 
 static void* load_required(GLADloadproc load, const char* name)
 {
@@ -64,6 +65,7 @@ int gladLoadGLLoader(GLADloadproc load)
     glad_glUniform3fv = (PFNGLUNIFORM3FVPROC)load_required(load, "glUniform3fv");
     glad_glUniform1f = (PFNGLUNIFORM1FPROC)load_required(load, "glUniform1f");
     glad_glUniform1i = (PFNGLUNIFORM1IPROC)load_required(load, "glUniform1i");
+    glad_glDepthFunc = (PFNGLDEPTHFUNCPROC)load_required(load, "glDepthFunc");
 
     return glad_glGenVertexArrays && glad_glBindVertexArray && glad_glGenBuffers &&
            glad_glBindBuffer && glad_glBufferData && glad_glCreateShader &&

@@ -237,6 +237,7 @@ int main(int argc, char** argv)
     glfwSetCursorPosCallback(window, mouseCallback);
 
     Shader oceanShader("shaders/ocean.vert", "shaders/ocean.frag");
+    Shader skyShader("shaders/sky.vert", "shaders/sky.frag");
     Ocean ocean(120.0f, 160);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
 
@@ -263,6 +264,14 @@ int main(int argc, char** argv)
             static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight),
             0.1f,
             400.0f);
+
+        glDepthFunc(GL_LEQUAL);
+        skyShader.use();
+        skyShader.setMat4("uView", glm::mat4(glm::mat3(camera.viewMatrix())));
+        skyShader.setMat4("uProjection", projection);
+        skyShader.setVec3("uLightDirection", glm::normalize(glm::vec3(-0.42f, 0.74f, -0.52f)));
+        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDepthFunc(GL_LESS);
 
         oceanShader.use();
         oceanShader.setMat4("uModel", glm::mat4(1.0f));
