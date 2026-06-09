@@ -2,7 +2,17 @@
 
 #include "Mesh.h"
 
+#include <glm/glm.hpp>
+
 #include <memory>
+
+struct GerstnerWave {
+    glm::vec2 direction;
+    float amplitude;
+    float wavelength;
+    float steepness;
+    float phase;
+};
 
 class Ocean {
 public:
@@ -17,4 +27,3 @@ private:
     int resolution_ = 0;
     std::unique_ptr<Mesh> mesh_;
 };
-

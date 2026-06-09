@@ -74,6 +74,7 @@ typedef void (APIENTRYP PFNGLDELETEPROGRAMPROC)(GLuint program);
 typedef void (APIENTRYP PFNGLUSEPROGRAMPROC)(GLuint program);
 typedef GLint (APIENTRYP PFNGLGETUNIFORMLOCATIONPROC)(GLuint program, const GLchar* name);
 typedef void (APIENTRYP PFNGLUNIFORMMATRIX4FVPROC)(GLint location, GLsizei count, GLboolean transpose, const GLfloat* value);
+typedef void (APIENTRYP PFNGLUNIFORM2FVPROC)(GLint location, GLsizei count, const GLfloat* value);
 typedef void (APIENTRYP PFNGLUNIFORM3FVPROC)(GLint location, GLsizei count, const GLfloat* value);
 typedef void (APIENTRYP PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
 typedef void (APIENTRYP PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
@@ -102,6 +103,7 @@ extern PFNGLDELETEPROGRAMPROC glad_glDeleteProgram;
 extern PFNGLUSEPROGRAMPROC glad_glUseProgram;
 extern PFNGLGETUNIFORMLOCATIONPROC glad_glGetUniformLocation;
 extern PFNGLUNIFORMMATRIX4FVPROC glad_glUniformMatrix4fv;
+extern PFNGLUNIFORM2FVPROC glad_glUniform2fv;
 extern PFNGLUNIFORM3FVPROC glad_glUniform3fv;
 extern PFNGLUNIFORM1FPROC glad_glUniform1f;
 extern PFNGLUNIFORM1IPROC glad_glUniform1i;
@@ -130,6 +132,7 @@ extern PFNGLUNIFORM1IPROC glad_glUniform1i;
 #define glUseProgram glad_glUseProgram
 #define glGetUniformLocation glad_glGetUniformLocation
 #define glUniformMatrix4fv glad_glUniformMatrix4fv
+#define glUniform2fv glad_glUniform2fv
 #define glUniform3fv glad_glUniform3fv
 #define glUniform1f glad_glUniform1f
 #define glUniform1i glad_glUniform1i
