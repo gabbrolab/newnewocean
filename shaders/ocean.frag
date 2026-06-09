@@ -8,6 +8,7 @@ uniform vec3 uBaseColor;
 uniform float uAlpha;
 uniform vec3 uCameraPosition;
 uniform vec3 uLightDirection;
+uniform vec3 uFogColor;
 uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
@@ -100,8 +101,8 @@ vec3 skyEnvironment(vec3 direction)
 {
     direction = normalize(direction);
     float horizon = smoothstep(-0.08, 0.22, direction.y);
-    vec3 horizonColor = vec3(0.92, 0.62, 0.36);
-    vec3 zenithColor = vec3(0.05, 0.16, 0.28);
+    vec3 horizonColor = vec3(0.64, 0.48, 0.36);
+    vec3 zenithColor = vec3(0.09, 0.18, 0.28);
     vec3 sky = mix(horizonColor, zenithColor, horizon);
 
     float sunDisk = pow(max(dot(direction, normalize(uLightDirection)), 0.0), 650.0);
@@ -109,6 +110,16 @@ vec3 skyEnvironment(vec3 direction)
     sky += vec3(1.0, 0.78, 0.42) * sunGlow * 0.25;
     sky += vec3(1.0, 0.92, 0.72) * sunDisk * 8.0;
     return sky;
+}
+
+vec3 acesToneMap(vec3 color)
+{
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
 void main()
@@ -131,18 +142,26 @@ void main()
     float foamBreakup = smoothstep(-0.25, 1.25, foamPattern);
     float foam = clamp(crestMask * (0.35 + 0.65 * foamBreakup), 0.0, 1.0);
 
-    vec3 deepWater = vec3(0.015, 0.090, 0.115);
-    vec3 shallowWater = vec3(0.050, 0.260, 0.300);
+    vec3 deepWater = vec3(0.010, 0.070, 0.095);
+    vec3 shallowWater = vec3(0.035, 0.185, 0.225);
     vec3 waterColor = mix(deepWater, shallowWater, smoothstep(-1.4, 1.6, vWorldPosition.y));
     vec3 sunColor = vec3(1.00, 0.86, 0.62);
     vec3 glintColor = vec3(0.66, 0.88, 1.00);
 
     float gridFade = smoothstep(70.0, 0.0, length(vWorldPosition.xz));
     vec3 color = waterColor * (0.18 + 0.58 * diffuse);
-    color = mix(color, reflection, clamp(fresnel * 1.8, 0.0, 0.85));
-    color += sunColor * specular * (0.35 + 2.4 * fresnel);
-    color += glintColor * fresnel * 0.16;
-    color = mix(color, vec3(0.82, 0.96, 0.93), foam * 0.78);
-    color = mix(color * 0.55, color, gridFade);
+    color = mix(color, reflection, clamp(fresnel * 1.15, 0.0, 0.62));
+    color += sunColor * specular * (0.24 + 2.0 * fresnel);
+    color += glintColor * fresnel * 0.08;
+    color = mix(color, vec3(0.82, 0.96, 0.93), foam * 0.48);
+    color = mix(color * 0.65, color, gridFade);
+
+    float distanceToCamera = length(uCameraPosition - vWorldPosition);
+    float heightFog = smoothstep(8.0, -2.0, vWorldPosition.y);
+    float fog = 1.0 - exp(-distanceToCamera * 0.018);
+    fog = clamp(fog * (0.35 + 0.65 * heightFog), 0.0, 0.82);
+    color = mix(color, uFogColor, fog);
+    color = acesToneMap(color * 0.82);
+    color = pow(color, vec3(1.0 / 2.2));
     FragColor = vec4(color, uAlpha);
 }
