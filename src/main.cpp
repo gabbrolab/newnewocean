@@ -25,7 +25,15 @@ struct AppOptions {
     int captureFrames = 2;
     int waveMode = 2;
     bool showWire = false;
+    std::string quality = "medium";
     std::string capturePath;
+};
+
+struct QualitySettings {
+    int fftSampleResolution = 64;
+    int oceanMeshResolution = 384;
+    float updateInterval = 0.055f;
+    bool useDetailCascade = true;
 };
 
 struct InputState {
@@ -86,11 +94,24 @@ AppOptions parseOptions(int argc, char** argv)
             } else if (mode == "fft") {
                 options.waveMode = 3;
             }
+        } else if (arg == "--quality" && i + 1 < argc) {
+            options.quality = argv[++i];
         } else if (arg == "--wire") {
             options.showWire = true;
         }
     }
     return options;
+}
+
+QualitySettings qualitySettingsFor(const std::string& quality)
+{
+    if (quality == "low") {
+        return {32, 256, 0.090f, false};
+    }
+    if (quality == "high") {
+        return {64, 512, 0.038f, true};
+    }
+    return {64, 384, 0.055f, true};
 }
 
 void saveFramebufferBmp(const std::filesystem::path& path, int width, int height)
@@ -408,6 +429,7 @@ void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& wave
 int main(int argc, char** argv)
 {
     const AppOptions options = parseOptions(argc, argv);
+    const QualitySettings quality = qualitySettingsFor(options.quality);
 
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW.\n";
@@ -460,10 +482,12 @@ int main(int argc, char** argv)
     detailSpectrum.highCutoff = 5.8f;
     detailSpectrum.directionalSpreadPower = 3.5f;
     const FftOcean fftDetailOcean(FftOceanConfig {256, 145.0f, 4242u}, detailSpectrum);
-    PrototypeHeightField fftPrototypeHeight = combineCascades(
-        fftOcean.buildPrototypeHeightField(64, 0.0f),
-        fftDetailOcean.buildPrototypeHeightField(64, 0.0f));
-    Ocean fftPrototypeOcean(800.0f, 384);
+    PrototypeHeightField fftPrototypeHeight = quality.useDetailCascade
+        ? combineCascades(
+            fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f),
+            fftDetailOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f))
+        : fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f);
+    Ocean fftPrototypeOcean(800.0f, quality.oceanMeshResolution);
     const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
     const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
     const unsigned int fftDisplacementTexture = createDisplacementTexture(fftPrototypeHeight);
@@ -481,6 +505,11 @@ int main(int argc, char** argv)
               << "\n";
     std::cout << "FFT prototype height: min " << fftPrototypeHeight.minHeight
               << ", max " << fftPrototypeHeight.maxHeight << "\n";
+    std::cout << "FFT quality: " << options.quality
+              << ", samples " << quality.fftSampleResolution << "x" << quality.fftSampleResolution
+              << ", mesh " << quality.oceanMeshResolution << "x" << quality.oceanMeshResolution
+              << ", cascades " << (quality.useDetailCascade ? 2 : 1)
+              << ", update " << quality.updateInterval << "s\n";
     std::cout << "GPU FFT self-test: min " << gpuFftStats.minValue
               << ", max " << gpuFftStats.maxValue
               << ", avg abs " << gpuFftStats.averageAbsValue
@@ -502,10 +531,12 @@ int main(int argc, char** argv)
         processInput(window, camera, deltaTime, waveMode);
         const float appTime = static_cast<float>(glfwGetTime());
 
-        if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > 0.055f)) {
-            fftPrototypeHeight = combineCascades(
-                fftOcean.buildPrototypeHeightField(64, appTime * 0.85f),
-                fftDetailOcean.buildPrototypeHeightField(64, appTime * 1.55f));
+        if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > quality.updateInterval)) {
+            fftPrototypeHeight = quality.useDetailCascade
+                ? combineCascades(
+                    fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 0.85f),
+                    fftDetailOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 1.55f))
+                : fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 0.85f);
             const float foamDeltaTime = previousFftUpdateTime < 0.0f ? 0.0f : appTime - previousFoamTime;
             accumulateFoam(fftPrototypeHeight, fftAccumulatedFoam, foamDeltaTime);
             uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
