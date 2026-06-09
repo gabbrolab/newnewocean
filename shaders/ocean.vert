@@ -9,7 +9,6 @@ uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
 uniform sampler2D uFftHeightMap;
-uniform sampler2D uFftDisplacementMap;
 uniform float uFftPatchLength;
 uniform float uFftChoppiness;
 
@@ -31,6 +30,18 @@ struct GerstnerWave {
 };
 
 uniform GerstnerWave uWaves[MAX_WAVES];
+
+float fftMicroHeight(vec2 xz)
+{
+    vec2 d0 = normalize(vec2(0.92, 0.38));
+    vec2 d1 = normalize(vec2(0.28, 0.96));
+    vec2 d2 = normalize(vec2(-0.64, 0.77));
+    float h = 0.0;
+    h += sin(dot(xz, d0) * 0.72 + uTime * 1.35) * 0.090;
+    h += sin(dot(xz, d1) * 1.18 + uTime * 1.92) * 0.050;
+    h += sin(dot(xz, d2) * 1.82 + uTime * 2.35) * 0.028;
+    return h;
+}
 
 vec2 coarseWarp(vec3 position)
 {
@@ -57,8 +68,7 @@ vec3 applyWaves(vec3 position)
     vec3 displaced = position;
     if (uWaveMode == 3) {
         vec2 uv = fract(position.xz / uFftPatchLength);
-        displaced.xz += texture(uFftDisplacementMap, uv).xy * uFftChoppiness;
-        displaced.y += texture(uFftHeightMap, uv).r;
+        displaced.y += texture(uFftHeightMap, uv).r + fftMicroHeight(position.xz);
         return displaced;
     }
 

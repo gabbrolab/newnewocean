@@ -1,7 +1,5 @@
 #include "GpuFft.h"
 
-#include "Shader.h"
-
 #include <glad/glad.h>
 
 #include <algorithm>
@@ -91,6 +89,41 @@ GLuint inverse1DPass(const Shader& bitReverseShader, const Shader& stageShader, 
     bitReversePass(bitReverseShader, source, scratch, resolution, horizontal);
     return stagePasses(stageShader, scratch, source, resolution, horizontal);
 }
+}
+
+GpuFftTransform::GpuFftTransform(int resolution)
+    : resolution_(resolution),
+      bitReverseShader_("shaders/fft_bit_reverse.comp"),
+      stageShader_("shaders/fft_stage.comp"),
+      scaleShader_("shaders/fft_scale.comp")
+{
+    if (resolution_ <= 0 || (resolution_ & (resolution_ - 1)) != 0) {
+        throw std::runtime_error("GPU FFT resolution must be a positive power of two.");
+    }
+
+    scratchTexture_ = createComplexTexture(resolution_, nullptr);
+}
+
+GpuFftTransform::~GpuFftTransform()
+{
+    if (scratchTexture_ != 0) {
+        glDeleteTextures(1, &scratchTexture_);
+    }
+}
+
+unsigned int GpuFftTransform::inverse(unsigned int sourceTexture)
+{
+    unsigned int current = inverse1DPass(bitReverseShader_, stageShader_, sourceTexture, scratchTexture_, resolution_, true);
+    unsigned int scratch = current == sourceTexture ? scratchTexture_ : sourceTexture;
+    current = inverse1DPass(bitReverseShader_, stageShader_, current, scratch, resolution_, false);
+    scratch = current == sourceTexture ? scratchTexture_ : sourceTexture;
+
+    scaleShader_.use();
+    scaleShader_.setInt("uResolution", resolution_);
+    scaleShader_.setFloat("uScale", 1.0f / static_cast<float>(resolution_ * resolution_));
+    bindImages(current, scratch);
+    dispatch2D(resolution_, resolution_);
+    return scratch;
 }
 
 GpuFftStats GpuFftSelfTest::runInverseTransform(int resolution)
