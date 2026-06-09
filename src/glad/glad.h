@@ -102,6 +102,33 @@ extern "C" {
 #ifndef GL_TEXTURE0
 #define GL_TEXTURE0 0x84C0
 #endif
+#ifndef GL_TEXTURE1
+#define GL_TEXTURE1 0x84C1
+#endif
+#ifndef GL_TEXTURE_2D_ARRAY
+#define GL_TEXTURE_2D_ARRAY 0x8C1A
+#endif
+#ifndef GL_RGBA32F
+#define GL_RGBA32F 0x8814
+#endif
+#ifndef GL_RGBA16F
+#define GL_RGBA16F 0x881A
+#endif
+#ifndef GL_RG16F
+#define GL_RG16F 0x822F
+#endif
+#ifndef GL_SHADER_STORAGE_BUFFER
+#define GL_SHADER_STORAGE_BUFFER 0x90D2
+#endif
+#ifndef GL_LINEAR
+#define GL_LINEAR 0x2601
+#endif
+#ifndef GL_REPEAT
+#define GL_REPEAT 0x2901
+#endif
+#ifndef GL_LINEAR_MIPMAP_LINEAR
+#define GL_LINEAR_MIPMAP_LINEAR 0x2703
+#endif
 
 typedef ptrdiff_t GLsizeiptr;
 typedef ptrdiff_t GLintptr;
@@ -142,6 +169,10 @@ typedef void (APIENTRYP PFNGLACTIVETEXTUREPROC)(GLenum texture);
 typedef void (APIENTRYP PFNGLDISPATCHCOMPUTEPROC)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
 typedef void (APIENTRYP PFNGLMEMORYBARRIERPROC)(GLbitfield barriers);
 typedef void (APIENTRYP PFNGLBINDIMAGETEXTUREPROC)(GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format);
+typedef void (APIENTRYP PFNGLTEXSTORAGE3DPROC)(GLenum target, GLsizei levels, GLenum internalformat, GLsizei width, GLsizei height, GLsizei depth);
+typedef void (APIENTRYP PFNGLTEXSUBIMAGE3DPROC)(GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const void* pixels);
+typedef void (APIENTRYP PFNGLGENERATEMIPMAPPROC)(GLenum target);
+typedef void (APIENTRYP PFNGLBINDBUFFERBASEPROC)(GLenum target, GLuint index, GLuint buffer);
 
 extern PFNGLGENVERTEXARRAYSPROC glad_glGenVertexArrays;
 extern PFNGLBINDVERTEXARRAYPROC glad_glBindVertexArray;
@@ -177,6 +208,10 @@ extern PFNGLACTIVETEXTUREPROC glad_glActiveTexture;
 extern PFNGLDISPATCHCOMPUTEPROC glad_glDispatchCompute;
 extern PFNGLMEMORYBARRIERPROC glad_glMemoryBarrier;
 extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
+extern PFNGLTEXSTORAGE3DPROC glad_glTexStorage3D;
+extern PFNGLTEXSUBIMAGE3DPROC glad_glTexSubImage3D;
+extern PFNGLGENERATEMIPMAPPROC glad_glGenerateMipmap;
+extern PFNGLBINDBUFFERBASEPROC glad_glBindBufferBase;
 
 #define glGenVertexArrays glad_glGenVertexArrays
 #define glBindVertexArray glad_glBindVertexArray
@@ -212,6 +247,10 @@ extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
 #define glDispatchCompute glad_glDispatchCompute
 #define glMemoryBarrier glad_glMemoryBarrier
 #define glBindImageTexture glad_glBindImageTexture
+#define glTexStorage3D glad_glTexStorage3D
+#define glTexSubImage3D glad_glTexSubImage3D
+#define glGenerateMipmap glad_glGenerateMipmap
+#define glBindBufferBase glad_glBindBufferBase
 
 int gladLoadGLLoader(GLADloadproc load);
 

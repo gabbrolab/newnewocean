@@ -1,6 +1,5 @@
 #include "Camera.h"
 #include "FftOcean.h"
-#include "GpuFft.h"
 #include "Ocean.h"
 #include "Shader.h"
 
@@ -9,13 +8,11 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
-#include <cmath>
-#include <complex>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <limits>
 #include <string>
 #include <vector>
 
@@ -24,17 +21,9 @@ struct AppOptions {
     int width = 1280;
     int height = 720;
     int captureFrames = 2;
-    int waveMode = 2;
     bool showWire = false;
     std::string quality = "medium";
     std::string capturePath;
-};
-
-struct QualitySettings {
-    int fftSampleResolution = 64;
-    int oceanMeshResolution = 384;
-    float updateInterval = 0.055f;
-    bool useDetailCascade = true;
 };
 
 struct InputState {
@@ -84,17 +73,6 @@ AppOptions parseOptions(int argc, char** argv)
             options.width = std::max(320, std::stoi(argv[++i]));
         } else if (arg == "--height" && i + 1 < argc) {
             options.height = std::max(240, std::stoi(argv[++i]));
-        } else if (arg == "--mode" && i + 1 < argc) {
-            const std::string mode = argv[++i];
-            if (mode == "flat") {
-                options.waveMode = 0;
-            } else if (mode == "sine") {
-                options.waveMode = 1;
-            } else if (mode == "gerstner") {
-                options.waveMode = 2;
-            } else if (mode == "fft") {
-                options.waveMode = 3;
-            }
         } else if (arg == "--quality" && i + 1 < argc) {
             options.quality = argv[++i];
         } else if (arg == "--wire") {
@@ -104,15 +82,15 @@ AppOptions parseOptions(int argc, char** argv)
     return options;
 }
 
-QualitySettings qualitySettingsFor(const std::string& quality)
+int meshResolutionFor(const std::string& quality)
 {
     if (quality == "low") {
-        return {256, 384, 0.033f, false};
+        return 256;
     }
     if (quality == "high") {
-        return {256, 1024, 0.016f, true};
+        return 1024;
     }
-    return {256, 768, 0.016f, true};
+    return 512;
 }
 
 void saveFramebufferBmp(const std::filesystem::path& path, int width, int height)
@@ -155,285 +133,17 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
     out.write(reinterpret_cast<const char*>(bmp.data()), static_cast<std::streamsize>(bmp.size()));
 }
 
-unsigned int createHeightTexture(const PrototypeHeightField& field)
+void setFloatArray(const Shader& shader, const std::string& name, const std::array<float, 4>& values)
 {
-    unsigned int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_R32F,
-        field.resolution,
-        field.resolution,
-        0,
-        GL_RED,
-        GL_FLOAT,
-        field.heights.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
-}
-
-unsigned int createComplexTexture(int resolution, const float* data)
-{
-    unsigned int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, resolution, resolution, 0, GL_RG, GL_FLOAT, data);
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
-}
-
-std::vector<float> packSpectrumTexture(const FftOcean& ocean)
-{
-    std::vector<float> packed;
-    packed.reserve(ocean.initialSpectrum().size() * 2);
-    for (const std::complex<float>& value : ocean.initialSpectrum()) {
-        packed.push_back(value.real());
-        packed.push_back(value.imag());
-    }
-    return packed;
-}
-
-void uploadHeightTexture(unsigned int texture, const PrototypeHeightField& field)
-{
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D,
-        0,
-        0,
-        0,
-        field.resolution,
-        field.resolution,
-        GL_RED,
-        GL_FLOAT,
-        field.heights.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-unsigned int createSlopeTexture(const PrototypeHeightField& field)
-{
-    unsigned int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RG32F,
-        field.resolution,
-        field.resolution,
-        0,
-        GL_RG,
-        GL_FLOAT,
-        field.slopes.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
-}
-
-void uploadSlopeTexture(unsigned int texture, const PrototypeHeightField& field)
-{
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D,
-        0,
-        0,
-        0,
-        field.resolution,
-        field.resolution,
-        GL_RG,
-        GL_FLOAT,
-        field.slopes.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-unsigned int createDisplacementTexture(const PrototypeHeightField& field)
-{
-    unsigned int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RG32F,
-        field.resolution,
-        field.resolution,
-        0,
-        GL_RG,
-        GL_FLOAT,
-        field.displacements.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
-}
-
-void uploadDisplacementTexture(unsigned int texture, const PrototypeHeightField& field)
-{
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D,
-        0,
-        0,
-        0,
-        field.resolution,
-        field.resolution,
-        GL_RG,
-        GL_FLOAT,
-        field.displacements.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-unsigned int createFoamTexture(const PrototypeHeightField& field)
-{
-    unsigned int texture = 0;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_R32F,
-        field.resolution,
-        field.resolution,
-        0,
-        GL_RED,
-        GL_FLOAT,
-        field.foam.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-    return texture;
-}
-
-void uploadFoamTexture(unsigned int texture, const PrototypeHeightField& field)
-{
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexSubImage2D(
-        GL_TEXTURE_2D,
-        0,
-        0,
-        0,
-        field.resolution,
-        field.resolution,
-        GL_RED,
-        GL_FLOAT,
-        field.foam.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
-}
-
-void accumulateFoam(PrototypeHeightField& field, std::vector<float>& accumulatedFoam, float deltaTime)
-{
-    if (accumulatedFoam.size() != field.foam.size()) {
-        accumulatedFoam = field.foam;
-        return;
-    }
-
-    const float decay = std::exp(-deltaTime * 0.85f);
-    for (size_t i = 0; i < field.foam.size(); ++i) {
-        accumulatedFoam[i] = std::max(field.foam[i], accumulatedFoam[i] * decay);
-        field.foam[i] = accumulatedFoam[i];
+    for (int i = 0; i < 4; ++i) {
+        shader.setFloat(name + "[" + std::to_string(i) + "]", values[i]);
     }
 }
 
-PrototypeHeightField combineCascades(const PrototypeHeightField& large, const PrototypeHeightField& detail)
-{
-    PrototypeHeightField combined = large;
-    const float cellSize = large.patchLength / static_cast<float>(large.resolution);
-    combined.minHeight = std::numeric_limits<float>::max();
-    combined.maxHeight = std::numeric_limits<float>::lowest();
-
-    for (int z = 0; z < large.resolution; ++z) {
-        for (int x = 0; x < large.resolution; ++x) {
-            const float worldX = (static_cast<float>(x) - static_cast<float>(large.resolution) * 0.5f) * cellSize;
-            const float worldZ = (static_cast<float>(z) - static_cast<float>(large.resolution) * 0.5f) * cellSize;
-            const size_t index = static_cast<size_t>(z * large.resolution + x);
-            combined.heights[index] += detail.sample(worldX, worldZ) * 0.42f;
-            combined.slopes[index] += detail.sampleSlope(worldX, worldZ) * 0.58f;
-            combined.displacements[index] += detail.sampleDisplacement(worldX, worldZ) * 0.30f;
-            combined.foam[index] = std::max(combined.foam[index], detail.sampleFoam(worldX, worldZ) * 0.65f);
-            combined.minHeight = std::min(combined.minHeight, combined.heights[index]);
-            combined.maxHeight = std::max(combined.maxHeight, combined.heights[index]);
-        }
-    }
-
-    return combined;
-}
-
-std::vector<GerstnerWave> makeMultipleWaves()
-{
-    std::vector<GerstnerWave> waves = {
-        {glm::normalize(glm::vec2(1.00f, 0.15f)), 1.18f, 53.0f, 0.15f, 0.0f},
-        {glm::normalize(glm::vec2(0.68f, 0.73f)), 0.68f, 34.7f, 0.13f, 1.9f},
-        {glm::normalize(glm::vec2(0.08f, 0.997f)), 0.39f, 23.6f, 0.11f, 4.2f},
-        {glm::normalize(glm::vec2(-0.41f, 0.91f)), 0.22f, 15.3f, 0.09f, 2.6f},
-        {glm::normalize(glm::vec2(0.96f, -0.27f)), 0.14f, 10.4f, 0.07f, 5.7f},
-        {glm::normalize(glm::vec2(0.36f, 0.93f)), 0.085f, 7.1f, 0.055f, 0.8f},
-        {glm::normalize(glm::vec2(-0.79f, 0.61f)), 0.052f, 5.2f, 0.045f, 3.4f},
-        {glm::normalize(glm::vec2(0.18f, -0.98f)), 0.030f, 3.65f, 0.035f, 2.2f},
-        {glm::normalize(glm::vec2(-0.67f, 0.74f)), 0.020f, 2.85f, 0.026f, 5.1f},
-        {glm::normalize(glm::vec2(0.91f, 0.41f)), 0.012f, 2.25f, 0.018f, 1.4f},
-    };
-
-    constexpr float maxTotalSteepness = 0.90f;
-    float totalSteepness = 0.0f;
-    for (const GerstnerWave& wave : waves) {
-        totalSteepness += wave.steepness;
-    }
-
-    if (totalSteepness > maxTotalSteepness) {
-        const float scale = maxTotalSteepness / totalSteepness;
-        for (GerstnerWave& wave : waves) {
-            wave.steepness *= scale;
-        }
-    }
-
-    return waves;
-}
-
-void uploadWaves(const Shader& shader, const std::vector<GerstnerWave>& waves)
-{
-    shader.setInt("uWaveCount", static_cast<int>(waves.size()));
-    for (size_t i = 0; i < waves.size(); ++i) {
-        const std::string prefix = "uWaves[" + std::to_string(i) + "].";
-        shader.setVec2(prefix + "direction", waves[i].direction);
-        shader.setFloat(prefix + "amplitude", waves[i].amplitude);
-        shader.setFloat(prefix + "wavelength", waves[i].wavelength);
-        shader.setFloat(prefix + "steepness", waves[i].steepness);
-        shader.setFloat(prefix + "phase", waves[i].phase);
-    }
-}
-
-void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& waveMode)
+void processInput(GLFWwindow* window, Camera& camera, float deltaTime)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-    if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
-        waveMode = 0;
-    }
-    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
-        waveMode = 1;
-    }
-    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
-        waveMode = 2;
-    }
-    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
-        waveMode = 3;
     }
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -455,7 +165,7 @@ void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& wave
 int main(int argc, char** argv)
 {
     const AppOptions options = parseOptions(argc, argv);
-    const QualitySettings quality = qualitySettingsFor(options.quality);
+    const int meshResolution = meshResolutionFor(options.quality);
 
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW.\n";
@@ -467,7 +177,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
 
-    GLFWwindow* window = glfwCreateWindow(options.width, options.height, "Gabbro's Lab - Ocean Lab", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(options.width, options.height, "Gabbro's Lab - FFT Ocean", nullptr, nullptr);
     if (window == nullptr) {
         std::cerr << "Failed to create GLFW window.\n";
         glfwTerminate();
@@ -489,64 +199,41 @@ int main(int argc, char** argv)
     glEnable(GL_MULTISAMPLE);
     glClearColor(0.04f, 0.07f, 0.10f, 1.0f);
 
-    Camera camera(options.waveMode == 3 ? glm::vec3(-34.0f, 2.35f, 46.0f) : glm::vec3(-18.0f, 3.1f, 30.0f));
+    Camera camera(glm::vec3(0.0f, 12.0f, 70.0f));
     gInput.camera = &camera;
     glfwSetCursorPosCallback(window, mouseCallback);
 
+    try {
     Shader oceanShader("shaders/ocean.vert", "shaders/ocean.frag");
     Shader skyShader("shaders/sky.vert", "shaders/sky.frag");
-    Ocean ocean(800.0f, 768);
-    const std::vector<GerstnerWave> waves = makeMultipleWaves();
-    const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
-    Ocean fftPrototypeOcean(920.0f, quality.oceanMeshResolution);
-    const std::vector<float> h0Packed = packSpectrumTexture(fftOcean);
-    const unsigned int fftH0Texture = createComplexTexture(fftOcean.config().resolution, h0Packed.data());
-    const unsigned int fftSpectrumTexture = createComplexTexture(fftOcean.config().resolution, nullptr);
-    unsigned int fftHeightTexture = fftSpectrumTexture;
-    GpuFftTransform fftTransform(fftOcean.config().resolution);
-    Shader fftEvolveShader("shaders/fft_evolve_height.comp");
-    const FftSpectrumStats& fftStats = fftOcean.stats();
-    std::cout << "FFT spectrum: "
-              << fftOcean.config().resolution << "x" << fftOcean.config().resolution
-              << ", patch " << fftOcean.config().patchLength << "m"
-              << ", max |H0| " << fftStats.maxMagnitude
-              << ", avg |H0| " << fftStats.averageMagnitude
-              << ", energy " << fftStats.totalEnergy
-              << (fftStats.hasInvalidValues ? " (invalid values detected)" : "")
-              << "\n";
-    std::cout << "FFT quality: " << options.quality
-              << ", GPU FFT " << fftOcean.config().resolution << "x" << fftOcean.config().resolution
-              << ", mesh " << quality.oceanMeshResolution << "x" << quality.oceanMeshResolution
-              << ", update " << quality.updateInterval << "s\n";
-    fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
+
+    FftOcean fftOcean;
+    const float oceanSize = fftOcean.lengthScales()[0]; // seamless tiling of the largest cascade
+    Ocean ocean(oceanSize, meshResolution);
+
+    // A bound vertex array object is required to issue the attribute-less sky draw.
+    unsigned int skyVao = 0;
+    glGenVertexArrays(1, &skyVao);
+
+    const glm::vec3 sunDirection = glm::normalize(glm::vec3(-0.62f, 0.28f, -0.73f));
+
+    std::cout << "FFT ocean: " << FftOcean::kResolution << "x" << FftOcean::kResolution
+              << ", " << fftOcean.cascadeCount() << " cascades"
+              << ", mesh " << meshResolution << "x" << meshResolution
+              << ", patch " << oceanSize << "m\n";
 
     auto previousTime = std::chrono::steady_clock::now();
-    float previousFftUpdateTime = -1.0f;
     int renderedFrames = 0;
-    int waveMode = options.waveMode;
 
     while (!glfwWindowShouldClose(window)) {
         const auto currentTime = std::chrono::steady_clock::now();
         const float deltaTime = std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
-        processInput(window, camera, deltaTime, waveMode);
+        processInput(window, camera, deltaTime);
         const float appTime = static_cast<float>(glfwGetTime());
 
-        if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > quality.updateInterval)) {
-            fftEvolveShader.use();
-            fftEvolveShader.setInt("uResolution", fftOcean.config().resolution);
-            fftEvolveShader.setFloat("uPatchLength", fftOcean.config().patchLength);
-            fftEvolveShader.setFloat("uTime", appTime * 0.85f);
-            fftEvolveShader.setFloat("uGravity", fftOcean.spectrum().gravity);
-            fftEvolveShader.setFloat("uHeightScale", 110.0f);
-            glBindImageTexture(0, fftH0Texture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RG32F);
-            glBindImageTexture(1, fftSpectrumTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG32F);
-            glDispatchCompute(static_cast<unsigned int>((fftOcean.config().resolution + 7) / 8), static_cast<unsigned int>((fftOcean.config().resolution + 7) / 8), 1);
-            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
-            fftHeightTexture = fftTransform.inverse(fftSpectrumTexture);
-            previousFftUpdateTime = appTime;
-        }
+        fftOcean.update(appTime);
 
         int framebufferWidth = 0;
         int framebufferHeight = 0;
@@ -559,55 +246,63 @@ int main(int argc, char** argv)
             glm::radians(58.0f),
             static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight),
             0.1f,
-            2400.0f);
+            4000.0f);
+        const glm::mat4 view = camera.viewMatrix();
 
         glDepthFunc(GL_LEQUAL);
         skyShader.use();
-        skyShader.setMat4("uView", glm::mat4(glm::mat3(camera.viewMatrix())));
+        skyShader.setMat4("uView", glm::mat4(glm::mat3(view)));
         skyShader.setMat4("uProjection", projection);
-        const glm::vec3 sunDirection = waveMode == 3
-            ? glm::normalize(glm::vec3(-0.72f, 0.18f, -0.67f))
-            : glm::normalize(glm::vec3(-0.62f, 0.28f, -0.73f));
         skyShader.setVec3("uLightDirection", sunDirection);
+        glBindVertexArray(skyVao);
         glDrawArrays(GL_TRIANGLES, 0, 3);
+        glBindVertexArray(0);
         glDepthFunc(GL_LESS);
 
         oceanShader.use();
         oceanShader.setMat4("uModel", glm::mat4(1.0f));
-        oceanShader.setMat4("uView", camera.viewMatrix());
+        oceanShader.setMat4("uView", view);
         oceanShader.setMat4("uProjection", projection);
-        oceanShader.setFloat("uTime", appTime);
-        oceanShader.setInt("uWaveMode", waveMode);
-        oceanShader.setInt("uFftHeightMap", 0);
-        oceanShader.setFloat("uFftPatchLength", fftOcean.config().patchLength);
-        oceanShader.setFloat("uFftChoppiness", 0.85f);
-        uploadWaves(oceanShader, waves);
+        oceanShader.setInt("uCascadeCount", fftOcean.cascadeCount());
+        setFloatArray(oceanShader, "uLengthScales", fftOcean.lengthScales());
+        setFloatArray(oceanShader, "uTiles", fftOcean.tiles());
         oceanShader.setVec3("uCameraPosition", camera.position());
-        oceanShader.setVec3("uLightDirection", sunDirection);
-        oceanShader.setVec3("uFogColor", waveMode == 3 ? glm::vec3(0.020f, 0.052f, 0.070f) : glm::vec3(0.026f, 0.060f, 0.082f));
-        oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
-        oceanShader.setFloat("uAlpha", 1.0f);
-        glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
-        if (waveMode == 3) {
-            fftPrototypeOcean.draw();
-        } else {
-            ocean.draw();
-        }
-        glBindTexture(GL_TEXTURE_2D, 0);
+        oceanShader.setVec3("uSunDirection", sunDirection);
+        oceanShader.setVec3("uSunColor", glm::vec3(3.0f, 2.7f, 2.3f));
+        oceanShader.setVec3("uFogColor", glm::vec3(0.026f, 0.060f, 0.082f));
+        oceanShader.setFloat("uNormalStrength", 1.0f);
+        oceanShader.setFloat("uRoughness", 0.08f);
+        oceanShader.setFloat("uFoamRoughnessModifier", 0.4f);
+        oceanShader.setFloat("uHeightModifier", 1.0f);
+        oceanShader.setVec3("uScatterColor", glm::vec3(0.03f, 0.10f, 0.13f));
+        oceanShader.setVec3("uBubbleColor", glm::vec3(0.0f, 0.02f, 0.03f));
+        oceanShader.setVec3("uFoamColor", glm::vec3(0.85f, 0.92f, 0.92f));
+        oceanShader.setFloat("uBubbleDensity", 0.45f);
+        oceanShader.setFloat("uWavePeakScatterStrength", 1.1f);
+        oceanShader.setFloat("uScatterStrength", 0.5f);
+        oceanShader.setFloat("uScatterShadowStrength", 0.4f);
+        oceanShader.setFloat("uEnvironmentLightStrength", 1.0f);
+        oceanShader.setInt("uDisplacement", 0);
+        oceanShader.setInt("uSlope", 1);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, fftOcean.displacementArray());
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, fftOcean.slopeArray());
 
         if (options.showWire) {
-            oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
-            oceanShader.setFloat("uAlpha", 0.45f);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
-            if (waveMode == 3) {
-                fftPrototypeOcean.draw();
-            } else {
-                ocean.draw();
-            }
-            glBindTexture(GL_TEXTURE_2D, 0);
+        }
+        ocean.draw();
+        if (options.showWire) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        glActiveTexture(GL_TEXTURE0);
 
         ++renderedFrames;
         if (!options.capturePath.empty() && renderedFrames >= options.captureFrames) {
@@ -619,9 +314,15 @@ int main(int argc, char** argv)
         glfwPollEvents();
     }
 
+    glDeleteVertexArrays(1, &skyVao);
+    } catch (const std::exception& e) {
+        std::cerr << "Fatal: " << e.what() << std::endl;
+        glfwDestroyWindow(window);
+        glfwTerminate();
+        return 1;
+    }
+
     glfwDestroyWindow(window);
-    glDeleteTextures(1, &fftH0Texture);
-    glDeleteTextures(1, &fftSpectrumTexture);
     glfwTerminate();
     return 0;
 }

@@ -1,0 +1,76 @@
+#version 430 core
+
+// Evolves the spectrum in time and produces, per cascade, two complex-packed
+// signals holding the horizontal/vertical displacement and the slope/Jacobian
+// derivatives. The "two real signals per complex" packing lets a single IFFT
+// recover four real fields. Ported from CS_UpdateSpectrumForFFT.
+
+layout (local_size_x = 8, local_size_y = 8) in;
+
+layout (rgba32f, binding = 0) uniform readonly image2DArray uInitialSpectrum;
+layout (rgba32f, binding = 1) uniform writeonly image2DArray uSpectrum;
+
+uniform int uN;
+uniform float uLengthScales[4];
+uniform float uGravity;
+uniform float uRepeatTime;
+uniform float uFrameTime;
+
+const float PI = 3.14159265358979323846;
+
+vec2 complexMul(vec2 a, vec2 b)
+{
+    return vec2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
+}
+
+vec2 euler(float x)
+{
+    return vec2(cos(x), sin(x));
+}
+
+void main()
+{
+    ivec2 id = ivec2(gl_GlobalInvocationID.xy);
+    if (id.x >= uN || id.y >= uN) {
+        return;
+    }
+
+    float halfN = float(uN) / 2.0;
+
+    for (int i = 0; i < 4; ++i) {
+        vec4 initialSignal = imageLoad(uInitialSpectrum, ivec3(id, i));
+        vec2 h0 = initialSignal.xy;
+        vec2 h0conj = initialSignal.zw;
+
+        vec2 k = (vec2(id) - halfN) * 2.0 * PI / uLengthScales[i];
+        float kMag = length(k);
+        float kMagRcp = (kMag < 0.0001) ? 1.0 : 1.0 / kMag;
+
+        float w0 = 2.0 * PI / uRepeatTime;
+        float dispersion = floor(sqrt(uGravity * kMag) / w0) * w0 * uFrameTime;
+        vec2 exponent = euler(dispersion);
+
+        vec2 htilde = complexMul(h0, exponent) + complexMul(h0conj, vec2(exponent.x, -exponent.y));
+        vec2 ih = vec2(-htilde.y, htilde.x);
+
+        vec2 displacementX = ih * k.x * kMagRcp;
+        vec2 displacementY = htilde;
+        vec2 displacementZ = ih * k.y * kMagRcp;
+
+        vec2 displacementX_dx = -htilde * k.x * k.x * kMagRcp;
+        vec2 displacementY_dx = ih * k.x;
+        vec2 displacementZ_dx = -htilde * k.x * k.y * kMagRcp;
+
+        vec2 displacementY_dz = ih * k.y;
+        vec2 displacementZ_dz = -htilde * k.y * k.y * kMagRcp;
+
+        vec2 htildeDisplacementX = vec2(displacementX.x - displacementZ.y, displacementX.y + displacementZ.x);
+        vec2 htildeDisplacementZ = vec2(displacementY.x - displacementZ_dx.y, displacementY.y + displacementZ_dx.x);
+
+        vec2 htildeSlopeX = vec2(displacementY_dx.x - displacementY_dz.y, displacementY_dx.y + displacementY_dz.x);
+        vec2 htildeSlopeZ = vec2(displacementX_dx.x - displacementZ_dz.y, displacementX_dx.y + displacementZ_dz.x);
+
+        imageStore(uSpectrum, ivec3(id, i * 2), vec4(htildeDisplacementX, htildeDisplacementZ));
+        imageStore(uSpectrum, ivec3(id, i * 2 + 1), vec4(htildeSlopeX, htildeSlopeZ));
+    }
+}

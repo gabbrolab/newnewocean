@@ -3,16 +3,12 @@
 #include <vector>
 
 Ocean::Ocean(float sizeMeters, int resolution)
-    : Ocean(sizeMeters, resolution, {})
-{
-}
-
-Ocean::Ocean(float sizeMeters, int resolution, const std::function<float(float, float)>& heightSampler)
     : sizeMeters_(sizeMeters),
       resolution_(resolution)
 {
+    std::vector<Vertex> vertices;
     std::vector<unsigned int> indices;
-    vertices_.reserve(static_cast<size_t>((resolution + 1) * (resolution + 1)));
+    vertices.reserve(static_cast<size_t>((resolution + 1) * (resolution + 1)));
     indices.reserve(static_cast<size_t>(resolution * resolution * 6));
 
     const float halfSize = sizeMeters * 0.5f;
@@ -20,9 +16,9 @@ Ocean::Ocean(float sizeMeters, int resolution, const std::function<float(float, 
         for (int x = 0; x <= resolution; ++x) {
             const float u = static_cast<float>(x) / static_cast<float>(resolution);
             const float v = static_cast<float>(z) / static_cast<float>(resolution);
-            vertices_.push_back({
+            vertices.push_back({
                 -halfSize + u * sizeMeters,
-                heightSampler ? heightSampler(-halfSize + u * sizeMeters, -halfSize + v * sizeMeters) : 0.0f,
+                0.0f,
                 -halfSize + v * sizeMeters
             });
         }
@@ -46,22 +42,10 @@ Ocean::Ocean(float sizeMeters, int resolution, const std::function<float(float, 
         }
     }
 
-    mesh_ = std::make_unique<Mesh>(vertices_, indices);
+    mesh_ = std::make_unique<Mesh>(vertices, indices);
 }
 
 void Ocean::draw() const
 {
     mesh_->draw();
-}
-
-void Ocean::updateHeights(const std::function<float(float, float)>& heightSampler)
-{
-    if (!heightSampler || vertices_.empty()) {
-        return;
-    }
-
-    for (Vertex& vertex : vertices_) {
-        vertex.y = heightSampler(vertex.x, vertex.z);
-    }
-    mesh_->updateVertices(vertices_);
 }

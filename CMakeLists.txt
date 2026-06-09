@@ -38,8 +38,6 @@ add_executable(GabbroOcean
     src/Camera.h
     src/FftOcean.cpp
     src/FftOcean.h
-    src/GpuFft.cpp
-    src/GpuFft.h
     src/Mesh.cpp
     src/Mesh.h
     src/Ocean.cpp

@@ -1,159 +1,36 @@
-#version 330 core
+#version 430 core
 
 in vec3 vWorldPosition;
-in vec3 vNormal;
-in vec3 vSourcePosition;
-
-uniform vec3 uBaseColor;
-uniform float uAlpha;
-uniform vec3 uCameraPosition;
-uniform vec3 uLightDirection;
-uniform vec3 uFogColor;
-uniform float uTime;
-uniform int uWaveMode;
-uniform int uWaveCount;
-uniform sampler2D uFftHeightMap;
-uniform float uFftPatchLength;
+in vec2 vWorldUV;
 
 out vec4 FragColor;
 
-const float PI = 3.14159265359;
-const float GRAVITY = 9.81;
-const int MAX_WAVES = 12;
-const int DETAIL_NORMAL_START = 6;
+uniform sampler2DArray uDisplacement;
+uniform sampler2DArray uSlope;
+uniform int uCascadeCount;
+uniform float uLengthScales[4];
+uniform float uTiles[4];
 
-const bool ENABLE_BASE_COLOR = true;
-const bool ENABLE_DIFFUSE = true;
-const bool ENABLE_SPECULAR = true;
-const bool ENABLE_FRESNEL = true;
-const bool ENABLE_REFLECTIONS = true;
-const bool ENABLE_FOAM = true;
-const bool ENABLE_NORMAL_DETAIL = true;
+uniform vec3 uCameraPosition;
+uniform vec3 uSunDirection;   // direction towards the sun
+uniform vec3 uSunColor;       // sun irradiance
+uniform vec3 uFogColor;
 
-const float SPECULAR_STRENGTH = 0.26;
-const float REFLECTION_STRENGTH = 0.64;
-const float FOAM_STRENGTH = 1.85;
-const float MICRO_NORMAL_STRENGTH = 0.78;
+uniform float uNormalStrength;
+uniform float uRoughness;
+uniform float uFoamRoughnessModifier;
+uniform float uHeightModifier;
 
-struct GerstnerWave {
-    vec2 direction;
-    float amplitude;
-    float wavelength;
-    float steepness;
-    float phase;
-};
+uniform vec3 uScatterColor;
+uniform vec3 uBubbleColor;
+uniform vec3 uFoamColor;
+uniform float uBubbleDensity;
+uniform float uWavePeakScatterStrength;
+uniform float uScatterStrength;
+uniform float uScatterShadowStrength;
+uniform float uEnvironmentLightStrength;
 
-uniform GerstnerWave uWaves[MAX_WAVES];
-
-float fresnelSchlick(float cosTheta, float f0)
-{
-    return f0 + (1.0 - f0) * pow(1.0 - clamp(cosTheta, 0.0, 1.0), 5.0);
-}
-
-float hash21(vec2 p)
-{
-    p = fract(p * vec2(123.34, 456.21));
-    p += dot(p, p + 45.32);
-    return fract(p.x * p.y);
-}
-
-float valueNoise(vec2 p)
-{
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    vec2 u = f * f * (3.0 - 2.0 * f);
-
-    float a = hash21(i);
-    float b = hash21(i + vec2(1.0, 0.0));
-    float c = hash21(i + vec2(0.0, 1.0));
-    float d = hash21(i + vec2(1.0, 1.0));
-
-    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
-}
-
-float fbmNoise(vec2 p)
-{
-    float value = 0.0;
-    float amplitude = 0.5;
-    mat2 rotate = mat2(0.80, -0.60, 0.60, 0.80);
-
-    for (int i = 0; i < 4; ++i) {
-        value += amplitude * valueNoise(p);
-        p = rotate * p * 2.03 + vec2(17.1, 9.2);
-        amplitude *= 0.5;
-    }
-
-    return value;
-}
-
-vec2 coarseWarp(vec3 position)
-{
-    vec2 warp = vec2(0.0);
-
-    for (int i = 0; i < MAX_WAVES; ++i) {
-        if (i >= uWaveCount || i >= 3) {
-            break;
-        }
-
-        GerstnerWave wave = uWaves[i];
-        vec2 direction = normalize(wave.direction);
-        float k = 2.0 * PI / wave.wavelength;
-        float omega = sqrt(GRAVITY * k);
-        float theta = k * dot(direction, position.xz) - omega * uTime + wave.phase;
-        warp += direction * cos(theta) * wave.amplitude;
-    }
-
-    return warp * 0.16;
-}
-
-vec3 analyticalNormal(vec3 position)
-{
-    vec3 tangentX = vec3(1.0, 0.0, 0.0);
-    vec3 tangentZ = vec3(0.0, 0.0, 1.0);
-    vec2 warp = coarseWarp(position);
-
-    for (int i = 0; i < MAX_WAVES; ++i) {
-        if (i >= uWaveCount) {
-            break;
-        }
-
-        GerstnerWave wave = uWaves[i];
-        vec2 direction = normalize(wave.direction);
-        vec2 sampleXZ = position.xz;
-        if (i >= 3) {
-            sampleXZ += warp;
-        }
-
-        float k = 2.0 * PI / wave.wavelength;
-        float omega = sqrt(GRAVITY * k);
-        float theta = k * dot(direction, sampleXZ) - omega * uTime + wave.phase;
-        float sinTheta = sin(theta);
-        float cosTheta = cos(theta);
-        float q = wave.steepness;
-        float a = wave.amplitude;
-        if (i >= DETAIL_NORMAL_START) {
-            float detailFade = 1.0 - smoothstep(16.0, 96.0, length(uCameraPosition.xz - position.xz));
-            float detailStrength = ENABLE_NORMAL_DETAIL ? MICRO_NORMAL_STRENGTH : 0.0;
-            q *= detailFade * detailStrength;
-            a *= detailFade * detailStrength;
-        }
-
-        if (uWaveMode == 1) {
-            tangentX.y += a * k * direction.x * cosTheta;
-            tangentZ.y += a * k * direction.y * cosTheta;
-        } else if (uWaveMode == 2) {
-            tangentX.x += -q * direction.x * direction.x * sinTheta;
-            tangentX.y += a * k * direction.x * cosTheta;
-            tangentX.z += -q * direction.x * direction.y * sinTheta;
-
-            tangentZ.x += -q * direction.y * direction.x * sinTheta;
-            tangentZ.y += a * k * direction.y * cosTheta;
-            tangentZ.z += -q * direction.y * direction.y * sinTheta;
-        }
-    }
-
-    return normalize(cross(tangentZ, tangentX));
-}
+const float PI = 3.14159265358979323846;
 
 vec3 skyEnvironment(vec3 direction)
 {
@@ -163,8 +40,9 @@ vec3 skyEnvironment(vec3 direction)
     vec3 zenithColor = vec3(0.09, 0.18, 0.28);
     vec3 sky = mix(horizonColor, zenithColor, horizon);
 
-    float sunDisk = pow(max(dot(direction, normalize(uLightDirection)), 0.0), 650.0);
-    float sunGlow = pow(max(dot(direction, normalize(uLightDirection)), 0.0), 12.0);
+    vec3 sunDir = normalize(uSunDirection);
+    float sunGlow = pow(max(dot(direction, sunDir), 0.0), 12.0);
+    float sunDisk = pow(max(dot(direction, sunDir), 0.0), 650.0);
     sky += vec3(1.0, 0.78, 0.42) * sunGlow * 0.25;
     sky += vec3(1.0, 0.92, 0.72) * sunDisk * 8.0;
     return sky;
@@ -180,115 +58,92 @@ vec3 acesToneMap(vec3 color)
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
-vec2 fftMicroSlope(vec2 xz)
+float smithMaskingBeckmann(vec3 h, vec3 s, float roughness)
 {
-    vec2 d0 = normalize(vec2(0.92, 0.38));
-    vec2 d1 = normalize(vec2(0.28, 0.96));
-    vec2 d2 = normalize(vec2(-0.64, 0.77));
-    vec2 s = vec2(0.0);
-    s += d0 * cos(dot(xz, d0) * 0.72 + uTime * 1.35) * 0.72 * 0.090;
-    s += d1 * cos(dot(xz, d1) * 1.18 + uTime * 1.92) * 1.18 * 0.050;
-    s += d2 * cos(dot(xz, d2) * 1.82 + uTime * 2.35) * 1.82 * 0.028;
-    return s;
+    float hdots = max(0.001, clamp(dot(h, s), 0.0, 1.0));
+    float a = hdots / (roughness * sqrt(1.0 - hdots * hdots));
+    float a2 = a * a;
+    return a < 1.6 ? (1.0 - 1.259 * a + 0.396 * a2) / (3.535 * a + 2.181 * a2) : 0.0;
+}
+
+float beckmann(float ndoth, float roughness)
+{
+    float expArg = (ndoth * ndoth - 1.0) / (roughness * roughness * ndoth * ndoth);
+    return exp(expArg) / (PI * roughness * roughness * ndoth * ndoth * ndoth * ndoth);
 }
 
 void main()
 {
-    vec3 normal = normalize(analyticalNormal(vSourcePosition));
-    vec3 lightDirection = normalize(uLightDirection);
-    vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
-    vec3 halfwayDirection = normalize(lightDirection + viewDirection);
+    vec4 displacementFoam = vec4(0.0);
+    vec2 slopes = vec2(0.0);
+    for (int c = 0; c < uCascadeCount; ++c) {
+        vec2 uv = vWorldUV / uLengthScales[c] * uTiles[c];
+        displacementFoam += texture(uDisplacement, vec3(uv, float(c)));
+        slopes += texture(uSlope, vec3(uv, float(c))).xy;
+    }
+
+    slopes *= uNormalStrength;
+
     float distanceToCamera = length(uCameraPosition - vWorldPosition);
+    // Gently soften normals and foam with distance to curb specular sparkle and
+    // foam shimmer, but keep most of the detail so the far field stays alive
+    // (the slope mipmaps already do most of the anti-aliasing).
+    float detailFade = 1.0 - smoothstep(180.0, 700.0, distanceToCamera);
 
-    if (uWaveMode == 3) {
-        vec2 fftUv = fract(vSourcePosition.xz / uFftPatchLength);
-        vec2 texel = vec2(1.0 / 256.0);
-        float heightLeft = texture(uFftHeightMap, fftUv - vec2(texel.x, 0.0)).r;
-        float heightRight = texture(uFftHeightMap, fftUv + vec2(texel.x, 0.0)).r;
-        float heightDown = texture(uFftHeightMap, fftUv - vec2(0.0, texel.y)).r;
-        float heightUp = texture(uFftHeightMap, fftUv + vec2(0.0, texel.y)).r;
-        vec2 fftSlope = vec2(heightRight - heightLeft, heightUp - heightDown) * (256.0 / uFftPatchLength);
-        fftSlope += fftMicroSlope(vWorldPosition.xz) * 1.45;
-        normal = normalize(vec3(-fftSlope.x, 1.0, -fftSlope.y));
-        float diffuse = max(dot(normal, lightDirection), 0.0);
-        float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
-        vec3 reflectedDirection = reflect(-viewDirection, normal);
-        vec3 reflection = skyEnvironment(reflectedDirection);
-        float height01 = smoothstep(-2.2, 2.2, vWorldPosition.y);
-        float slope = clamp(1.0 - normal.y, 0.0, 1.0);
-        float fftFoam = smoothstep(0.055, 0.18, slope) * smoothstep(0.10, 1.55, vWorldPosition.y);
-        float glint = pow(max(dot(normal, halfwayDirection), 0.0), 148.0);
-        float broadSun = pow(max(dot(reflectedDirection, lightDirection), 0.0), 18.0);
-        vec3 deepWater = vec3(0.004, 0.034, 0.047);
-        vec3 bodyWater = vec3(0.010, 0.078, 0.095);
-        vec3 crestTint = vec3(0.050, 0.150, 0.145);
-        vec3 scatter = vec3(0.030, 0.120, 0.105) * height01 * (0.20 + 0.80 * diffuse);
-        vec3 color = mix(deepWater, bodyWater, smoothstep(-1.6, 0.6, vWorldPosition.y));
-        color = mix(color, crestTint, height01 * 0.35 + slope * 0.18);
-        color *= 0.58 + diffuse * 0.22;
-        color += scatter;
-        color = mix(color, reflection, clamp(fresnel * 0.72, 0.0, 0.48));
-        color += vec3(1.0, 0.78, 0.48) * glint * (0.18 + fresnel * 1.25);
-        color += vec3(0.9, 0.72, 0.45) * broadSun * fresnel * 0.035;
-        color += vec3(0.55, 0.82, 0.92) * slope * 0.018;
-        color = mix(color, vec3(0.88, 0.96, 0.92), fftFoam * 0.82);
-        float horizonFog = smoothstep(45.0, 620.0, distanceToCamera);
-        float fog = clamp(1.0 - exp(-distanceToCamera * 0.018), 0.0, 0.88);
-        fog = max(fog, horizonFog * 0.52);
-        color = mix(color, uFogColor, fog);
-        color = acesToneMap(color * 1.08);
-        color = pow(color, vec3(1.0 / 2.2));
-        FragColor = vec4(color, uAlpha);
-        return;
-    }
+    float foam = clamp(displacementFoam.a, 0.0, 1.0) * mix(0.35, 1.0, detailFade);
 
-    float diffuse = ENABLE_DIFFUSE ? max(dot(normal, lightDirection), 0.0) : 0.0;
-    float specular = pow(max(dot(normal, halfwayDirection), 0.0), 104.0);
-    specular *= 1.0 - smoothstep(85.0, 260.0, distanceToCamera);
-    specular *= ENABLE_SPECULAR ? SPECULAR_STRENGTH : 0.0;
-    float fresnel = ENABLE_FRESNEL ? fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204) : 0.0204;
-    vec3 reflectedDirection = reflect(-viewDirection, normal);
-    vec3 reflection = ENABLE_REFLECTIONS ? skyEnvironment(reflectedDirection) : vec3(0.0);
-    float slope = clamp(1.0 - normal.y, 0.0, 1.0);
-    vec2 swellDirection = normalize(vec2(1.0, 0.15));
-    vec2 crestDirection = vec2(-swellDirection.y, swellDirection.x);
-    float crestMask = smoothstep(-0.22, 0.92, vWorldPosition.y) * smoothstep(0.015, 0.105, slope);
-    float longFoam = sin(dot(vWorldPosition.xz, crestDirection) * 0.34 + dot(vWorldPosition.xz, swellDirection) * 0.055);
-    float brokenFoam = smoothstep(-0.32, 0.58, longFoam + fbmNoise(vWorldPosition.xz * 0.075 + uTime * 0.025) * 0.55);
-    float foamDistanceFade = 1.0 - smoothstep(90.0, 260.0, distanceToCamera);
-    float foam = clamp(crestMask * brokenFoam * foamDistanceFade * FOAM_STRENGTH, 0.0, 1.0);
-    foam *= ENABLE_FOAM ? 1.0 : 0.0;
+    vec3 normal = normalize(vec3(-slopes.x, 1.0, -slopes.y));
+    normal = normalize(mix(vec3(0.0, 1.0, 0.0), normal, mix(0.6, 1.0, detailFade)));
+    vec3 lightDir = normalize(uSunDirection);
+    vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
+    vec3 halfwayDir = normalize(lightDir + viewDir);
 
-    float height01 = smoothstep(-1.8, 1.6, vWorldPosition.y);
-    float troughShade = smoothstep(-1.1, 0.55, vWorldPosition.y);
-    float naturalVariation = fbmNoise(vSourcePosition.xz * 0.022 + vec2(uTime * 0.010, -uTime * 0.006));
-    vec3 abyssWater = vec3(0.004, 0.038, 0.052);
-    vec3 bodyWater = vec3(0.014, 0.085, 0.102);
-    vec3 crestWater = vec3(0.045, 0.155, 0.160);
-    vec3 waterColor = mix(abyssWater, bodyWater, troughShade);
-    waterColor = mix(waterColor, crestWater, height01 * 0.42);
-    waterColor *= 0.86 + naturalVariation * 0.20;
-    if (!ENABLE_BASE_COLOR) {
-        waterColor = vec3(0.0);
-    }
-    vec3 sunColor = vec3(1.00, 0.86, 0.62);
-    vec3 glintColor = vec3(0.66, 0.88, 1.00);
+    vec3 macroNormal = vec3(0.0, 1.0, 0.0);
+    float NdotL = max(dot(normal, lightDir), 0.0);
 
-    float gridFade = smoothstep(380.0, 40.0, length(vWorldPosition.xz));
-    vec3 color = waterColor * (0.52 + 0.30 * diffuse);
-    color += vec3(0.018, 0.055, 0.055) * slope * (0.35 + 0.65 * height01);
-    float grazingReflection = smoothstep(0.018, 0.72, fresnel) * REFLECTION_STRENGTH;
-    color = mix(color, reflection, clamp(grazingReflection, 0.0, 0.48));
-    color += sunColor * specular * (0.14 + 1.65 * fresnel);
-    color += glintColor * fresnel * 0.026;
-    color = mix(color, vec3(0.90, 0.98, 0.95), foam * 0.95);
-    color = mix(color * 0.65, color, gridFade);
+    // Cook-Torrance style specular with Beckmann distribution and Smith masking.
+    float a = uRoughness + foam * uFoamRoughnessModifier;
+    float ndoth = max(0.0001, dot(normal, halfwayDir));
+    float viewMask = smithMaskingBeckmann(halfwayDir, viewDir, a);
+    float lightMask = smithMaskingBeckmann(halfwayDir, lightDir, a);
+    float g = 1.0 / (1.0 + viewMask + lightMask);
 
+    float eta = 1.33;
+    float r0 = ((eta - 1.0) * (eta - 1.0)) / ((eta + 1.0) * (eta + 1.0));
+    float numerator = pow(1.0 - max(dot(normal, viewDir), 0.0), 5.0 * exp(-2.69 * a));
+    float fresnel = r0 + (1.0 - r0) * numerator / (1.0 + 22.7 * pow(a, 1.5));
+    fresnel = clamp(fresnel, 0.0, 1.0);
+
+    vec3 specular = uSunColor * fresnel * g * beckmann(ndoth, a);
+    specular /= 4.0 * max(0.001, dot(macroNormal, lightDir));
+    specular *= max(dot(normal, lightDir), 0.0);
+
+    vec3 envReflection = skyEnvironment(reflect(-viewDir, normal)) * uEnvironmentLightStrength;
+
+    // Subsurface / scattering approximation.
+    float waveHeight = max(0.0, displacementFoam.y) * uHeightModifier;
+    float k1 = uWavePeakScatterStrength * waveHeight
+        * pow(max(dot(lightDir, -viewDir), 0.0), 4.0)
+        * pow(0.5 - 0.5 * dot(lightDir, normal), 3.0);
+    float k2 = uScatterStrength * pow(max(dot(viewDir, normal), 0.0), 2.0);
+    float k3 = uScatterShadowStrength * NdotL;
+    float k4 = uBubbleDensity;
+
+    vec3 scatter = (k1 + k2) * uScatterColor * uSunColor / (1.0 + lightMask);
+    scatter += k3 * uScatterColor * uSunColor + k4 * uBubbleColor * uSunColor;
+
+    vec3 color = (1.0 - fresnel) * scatter + specular + fresnel * envReflection;
+    color = max(vec3(0.0), color);
+    color = mix(color, uFoamColor, foam);
+
+    // Distance fog and tone mapping. Matches the gerstner branch's atmosphere
+    // (dark blue haze, height-weighted) so both scenes share the same backdrop.
     float heightFog = smoothstep(8.0, -2.0, vWorldPosition.y);
-    float fog = 1.0 - exp(-distanceToCamera * 0.018);
+    float fog = 1.0 - exp(-distanceToCamera * 0.006);
     fog = clamp(fog * (0.40 + 0.60 * heightFog), 0.0, 0.86);
     color = mix(color, uFogColor, fog);
-    color = acesToneMap(color * 0.82);
+
+    color = acesToneMap(color);
     color = pow(color, vec3(1.0 / 2.2));
-    FragColor = vec4(color, uAlpha);
+    FragColor = vec4(color, 1.0);
 }

@@ -34,6 +34,10 @@ PFNGLACTIVETEXTUREPROC glad_glActiveTexture = NULL;
 PFNGLDISPATCHCOMPUTEPROC glad_glDispatchCompute = NULL;
 PFNGLMEMORYBARRIERPROC glad_glMemoryBarrier = NULL;
 PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture = NULL;
+PFNGLTEXSTORAGE3DPROC glad_glTexStorage3D = NULL;
+PFNGLTEXSUBIMAGE3DPROC glad_glTexSubImage3D = NULL;
+PFNGLGENERATEMIPMAPPROC glad_glGenerateMipmap = NULL;
+PFNGLBINDBUFFERBASEPROC glad_glBindBufferBase = NULL;
 
 static void* load_required(GLADloadproc load, const char* name)
 {
@@ -76,9 +80,14 @@ int gladLoadGLLoader(GLADloadproc load)
     glad_glDispatchCompute = (PFNGLDISPATCHCOMPUTEPROC)load_required(load, "glDispatchCompute");
     glad_glMemoryBarrier = (PFNGLMEMORYBARRIERPROC)load_required(load, "glMemoryBarrier");
     glad_glBindImageTexture = (PFNGLBINDIMAGETEXTUREPROC)load_required(load, "glBindImageTexture");
+    glad_glTexStorage3D = (PFNGLTEXSTORAGE3DPROC)load_required(load, "glTexStorage3D");
+    glad_glTexSubImage3D = (PFNGLTEXSUBIMAGE3DPROC)load_required(load, "glTexSubImage3D");
+    glad_glGenerateMipmap = (PFNGLGENERATEMIPMAPPROC)load_required(load, "glGenerateMipmap");
+    glad_glBindBufferBase = (PFNGLBINDBUFFERBASEPROC)load_required(load, "glBindBufferBase");
 
     return glad_glGenVertexArrays && glad_glBindVertexArray && glad_glGenBuffers &&
            glad_glBindBuffer && glad_glBufferData && glad_glCreateShader &&
            glad_glCreateProgram && glad_glUseProgram && glad_glUniformMatrix4fv &&
-           glad_glActiveTexture && glad_glDispatchCompute && glad_glMemoryBarrier && glad_glBindImageTexture;
+           glad_glActiveTexture && glad_glDispatchCompute && glad_glMemoryBarrier && glad_glBindImageTexture &&
+           glad_glTexStorage3D && glad_glTexSubImage3D && glad_glGenerateMipmap && glad_glBindBufferBase;
 }
