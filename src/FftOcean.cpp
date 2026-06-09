@@ -75,6 +75,32 @@ glm::vec2 PrototypeHeightField::sampleSlope(float x, float z) const
     return sx0 + (sx1 - sx0) * tz;
 }
 
+glm::vec2 PrototypeHeightField::sampleDisplacement(float x, float z) const
+{
+    if (resolution <= 0 || displacements.empty() || patchLength <= 0.0f) {
+        return glm::vec2(0.0f);
+    }
+
+    const float uWrapped = x / patchLength - std::floor(x / patchLength);
+    const float vWrapped = z / patchLength - std::floor(z / patchLength);
+    const float fx = uWrapped * static_cast<float>(resolution);
+    const float fz = vWrapped * static_cast<float>(resolution);
+    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
+    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
+    const int x1 = (x0 + 1) % resolution;
+    const int z1 = (z0 + 1) % resolution;
+    const float tx = fx - std::floor(fx);
+    const float tz = fz - std::floor(fz);
+
+    const glm::vec2 d00 = displacements[static_cast<size_t>(z0 * resolution + x0)];
+    const glm::vec2 d10 = displacements[static_cast<size_t>(z0 * resolution + x1)];
+    const glm::vec2 d01 = displacements[static_cast<size_t>(z1 * resolution + x0)];
+    const glm::vec2 d11 = displacements[static_cast<size_t>(z1 * resolution + x1)];
+    const glm::vec2 dx0 = d00 + (d10 - d00) * tx;
+    const glm::vec2 dx1 = d01 + (d11 - d01) * tx;
+    return dx0 + (dx1 - dx0) * tz;
+}
+
 FftOcean::FftOcean(FftOceanConfig config, SpectrumParameters spectrum)
     : config_(config),
       spectrum_(spectrum)
@@ -189,6 +215,7 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
     field.patchLength = config_.patchLength;
     field.heights.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
     field.slopes.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
+    field.displacements.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
     field.minHeight = std::numeric_limits<float>::max();
     field.maxHeight = std::numeric_limits<float>::lowest();
 
@@ -205,6 +232,7 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
                 (static_cast<float>(z) - static_cast<float>(m) * 0.5f) * dx);
 
             std::complex<float> height(0.0f, 0.0f);
+            glm::vec2 displacement(0.0f);
             for (int ky = -m / 2; ky < m / 2; ++ky) {
                 for (int kx = -m / 2; kx < m / 2; ++kx) {
                     if (kx == 0 && ky == 0) {
@@ -223,12 +251,19 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
                     const std::complex<float> negative(std::cos(-omega * timeSeconds), std::sin(-omega * timeSeconds));
                     const std::complex<float> evolved = h0 * positive + std::conj(h0Neg) * negative;
                     const float phase = glm::dot(k, position);
-                    height += evolved * std::complex<float>(std::cos(phase), std::sin(phase));
+                    const std::complex<float> spatialWave = evolved * std::complex<float>(std::cos(phase), std::sin(phase));
+                    height += spatialWave;
+                    const float kLength = glm::length(k);
+                    if (kLength > 0.0001f) {
+                        displacement += (k / kLength) * spatialWave.imag();
+                    }
                 }
             }
 
             const float finalHeight = height.real() * normalization * 110.0f;
+            const glm::vec2 finalDisplacement = displacement * normalization * 82.0f;
             field.heights[static_cast<size_t>(z * m + x)] = finalHeight;
+            field.displacements[static_cast<size_t>(z * m + x)] = finalDisplacement;
             field.minHeight = std::min(field.minHeight, finalHeight);
             field.maxHeight = std::max(field.maxHeight, finalHeight);
         }
