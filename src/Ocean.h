@@ -21,11 +21,13 @@ public:
     Ocean(float sizeMeters, int resolution, const std::function<float(float, float)>& heightSampler);
 
     void draw() const;
+    void updateHeights(const std::function<float(float, float)>& heightSampler);
     float sizeMeters() const { return sizeMeters_; }
     int resolution() const { return resolution_; }
 
 private:
     float sizeMeters_ = 0.0f;
     int resolution_ = 0;
+    std::vector<Vertex> vertices_;
     std::unique_ptr<Mesh> mesh_;
 };
