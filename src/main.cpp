@@ -126,11 +126,16 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     return {
-        {glm::normalize(glm::vec2(1.00f, 0.18f)), 1.35f, 34.0f, 0.18f, 0.0f},
-        {glm::normalize(glm::vec2(0.35f, 0.94f)), 0.72f, 22.0f, 0.14f, 1.7f},
-        {glm::normalize(glm::vec2(-0.62f, 0.78f)), 0.42f, 15.0f, 0.11f, 3.2f},
-        {glm::normalize(glm::vec2(0.88f, -0.48f)), 0.28f, 10.5f, 0.08f, 5.1f},
-        {glm::normalize(glm::vec2(-0.18f, -0.98f)), 0.16f, 7.0f, 0.06f, 2.4f},
+        {glm::normalize(glm::vec2(1.00f, 0.15f)), 1.25f, 48.0f, 0.16f, 0.0f},
+        {glm::normalize(glm::vec2(0.75f, 0.66f)), 0.75f, 32.0f, 0.14f, 1.3f},
+        {glm::normalize(glm::vec2(0.20f, 0.98f)), 0.45f, 22.0f, 0.12f, 3.1f},
+        {glm::normalize(glm::vec2(-0.35f, 0.94f)), 0.24f, 14.0f, 0.10f, 4.6f},
+        {glm::normalize(glm::vec2(0.93f, -0.36f)), 0.16f, 9.5f, 0.08f, 2.2f},
+        {glm::normalize(glm::vec2(0.45f, 0.89f)), 0.10f, 6.8f, 0.07f, 5.4f},
+        {glm::normalize(glm::vec2(-0.85f, 0.52f)), 0.065f, 4.8f, 0.06f, 0.7f},
+        {glm::normalize(glm::vec2(0.14f, -0.99f)), 0.035f, 3.2f, 0.04f, 2.8f},
+        {glm::normalize(glm::vec2(0.99f, 0.05f)), 0.022f, 2.2f, 0.03f, 4.1f},
+        {glm::normalize(glm::vec2(-0.55f, -0.83f)), 0.014f, 1.5f, 0.02f, 5.8f},
     };
 }
 
