@@ -31,6 +31,16 @@ struct FftSpectrumStats {
     bool hasInvalidValues = false;
 };
 
+struct PrototypeHeightField {
+    int resolution = 0;
+    float patchLength = 0.0f;
+    float minHeight = 0.0f;
+    float maxHeight = 0.0f;
+    std::vector<float> heights;
+
+    float sample(float x, float z) const;
+};
+
 class FftOcean {
 public:
     FftOcean(FftOceanConfig config, SpectrumParameters spectrum);
@@ -40,6 +50,7 @@ public:
     const FftSpectrumStats& stats() const { return stats_; }
     const std::vector<std::complex<float>>& initialSpectrum() const { return initialSpectrum_; }
 
+    PrototypeHeightField buildPrototypeHeightField(int outputResolution, float timeSeconds) const;
     void saveSpectrumDebugImage(const std::filesystem::path& path) const;
 
 private:

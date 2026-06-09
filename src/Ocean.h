@@ -4,6 +4,7 @@
 
 #include <glm/glm.hpp>
 
+#include <functional>
 #include <memory>
 
 struct GerstnerWave {
@@ -17,6 +18,7 @@ struct GerstnerWave {
 class Ocean {
 public:
     Ocean(float sizeMeters, int resolution);
+    Ocean(float sizeMeters, int resolution, const std::function<float(float, float)>& heightSampler);
 
     void draw() const;
     float sizeMeters() const { return sizeMeters_; }
