@@ -75,6 +75,28 @@ Shader::Shader(const std::string& vertexPath, const std::string& fragmentPath)
     }
 }
 
+Shader::Shader(const std::string& computePath)
+{
+    const std::string computeSource = readTextFile(computePath);
+    const unsigned int computeShader = compileShader(GL_COMPUTE_SHADER, computeSource, computePath);
+
+    programId_ = glCreateProgram();
+    glAttachShader(programId_, computeShader);
+    glLinkProgram(programId_);
+
+    glDeleteShader(computeShader);
+
+    int success = 0;
+    glGetProgramiv(programId_, GL_LINK_STATUS, &success);
+    if (!success) {
+        int logLength = 0;
+        glGetProgramiv(programId_, GL_INFO_LOG_LENGTH, &logLength);
+        std::vector<char> log(static_cast<size_t>(logLength) + 1);
+        glGetProgramInfoLog(programId_, logLength, nullptr, log.data());
+        throw std::runtime_error("Compute program link failed: " + std::string(log.data()));
+    }
+}
+
 Shader::~Shader()
 {
     if (programId_ != 0) {
