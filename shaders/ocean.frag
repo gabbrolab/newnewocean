@@ -123,6 +123,13 @@ void main()
     float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
     vec3 reflectedDirection = reflect(-viewDirection, normal);
     vec3 reflection = skyEnvironment(reflectedDirection);
+    float slope = clamp(1.0 - normal.y, 0.0, 1.0);
+    float crestMask = smoothstep(0.35, 1.55, vWorldPosition.y) * smoothstep(0.04, 0.20, slope);
+    float foamPattern = sin(vWorldPosition.x * 1.55 + vWorldPosition.z * 0.85 + vWorldPosition.y * 2.2);
+    foamPattern += sin(vWorldPosition.x * -2.15 + vWorldPosition.z * 1.30);
+    foamPattern += sin(vWorldPosition.x * 0.42 - vWorldPosition.z * 2.70);
+    float foamBreakup = smoothstep(-0.25, 1.25, foamPattern);
+    float foam = clamp(crestMask * (0.35 + 0.65 * foamBreakup), 0.0, 1.0);
 
     vec3 deepWater = vec3(0.015, 0.090, 0.115);
     vec3 shallowWater = vec3(0.050, 0.260, 0.300);
@@ -135,6 +142,7 @@ void main()
     color = mix(color, reflection, clamp(fresnel * 1.8, 0.0, 0.85));
     color += sunColor * specular * (0.35 + 2.4 * fresnel);
     color += glintColor * fresnel * 0.16;
+    color = mix(color, vec3(0.82, 0.96, 0.93), foam * 0.78);
     color = mix(color * 0.55, color, gridFade);
     FragColor = vec4(color, uAlpha);
 }
