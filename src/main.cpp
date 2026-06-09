@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -302,6 +303,30 @@ void accumulateFoam(PrototypeHeightField& field, std::vector<float>& accumulated
     }
 }
 
+PrototypeHeightField combineCascades(const PrototypeHeightField& large, const PrototypeHeightField& detail)
+{
+    PrototypeHeightField combined = large;
+    const float cellSize = large.patchLength / static_cast<float>(large.resolution);
+    combined.minHeight = std::numeric_limits<float>::max();
+    combined.maxHeight = std::numeric_limits<float>::lowest();
+
+    for (int z = 0; z < large.resolution; ++z) {
+        for (int x = 0; x < large.resolution; ++x) {
+            const float worldX = (static_cast<float>(x) - static_cast<float>(large.resolution) * 0.5f) * cellSize;
+            const float worldZ = (static_cast<float>(z) - static_cast<float>(large.resolution) * 0.5f) * cellSize;
+            const size_t index = static_cast<size_t>(z * large.resolution + x);
+            combined.heights[index] += detail.sample(worldX, worldZ) * 0.42f;
+            combined.slopes[index] += detail.sampleSlope(worldX, worldZ) * 0.58f;
+            combined.displacements[index] += detail.sampleDisplacement(worldX, worldZ) * 0.30f;
+            combined.foam[index] = std::max(combined.foam[index], detail.sampleFoam(worldX, worldZ) * 0.65f);
+            combined.minHeight = std::min(combined.minHeight, combined.heights[index]);
+            combined.maxHeight = std::max(combined.maxHeight, combined.heights[index]);
+        }
+    }
+
+    return combined;
+}
+
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     std::vector<GerstnerWave> waves = {
@@ -425,7 +450,19 @@ int main(int argc, char** argv)
     Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
     const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
-    PrototypeHeightField fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, 0.0f);
+    SpectrumParameters detailSpectrum;
+    detailSpectrum.windSpeed = 8.5f;
+    detailSpectrum.windDirection = glm::normalize(glm::vec2(0.82f, 0.55f));
+    detailSpectrum.fetch = 24000.0f;
+    detailSpectrum.gamma = 2.2f;
+    detailSpectrum.amplitudeScale = 0.28f;
+    detailSpectrum.lowCutoff = 0.055f;
+    detailSpectrum.highCutoff = 5.8f;
+    detailSpectrum.directionalSpreadPower = 3.5f;
+    const FftOcean fftDetailOcean(FftOceanConfig {256, 145.0f, 4242u}, detailSpectrum);
+    PrototypeHeightField fftPrototypeHeight = combineCascades(
+        fftOcean.buildPrototypeHeightField(64, 0.0f),
+        fftDetailOcean.buildPrototypeHeightField(64, 0.0f));
     Ocean fftPrototypeOcean(800.0f, 384);
     const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
     const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
@@ -466,7 +503,9 @@ int main(int argc, char** argv)
         const float appTime = static_cast<float>(glfwGetTime());
 
         if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > 0.055f)) {
-            fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, appTime * 0.85f);
+            fftPrototypeHeight = combineCascades(
+                fftOcean.buildPrototypeHeightField(64, appTime * 0.85f),
+                fftDetailOcean.buildPrototypeHeightField(64, appTime * 1.55f));
             const float foamDeltaTime = previousFftUpdateTime < 0.0f ? 0.0f : appTime - previousFoamTime;
             accumulateFoam(fftPrototypeHeight, fftAccumulatedFoam, foamDeltaTime);
             uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
