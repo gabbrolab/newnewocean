@@ -125,7 +125,7 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
 
 std::vector<GerstnerWave> makeMultipleWaves()
 {
-    return {
+    std::vector<GerstnerWave> waves = {
         {glm::normalize(glm::vec2(1.00f, 0.15f)), 1.25f, 48.0f, 0.16f, 0.0f},
         {glm::normalize(glm::vec2(0.75f, 0.66f)), 0.75f, 32.0f, 0.14f, 1.3f},
         {glm::normalize(glm::vec2(0.20f, 0.98f)), 0.45f, 22.0f, 0.12f, 3.1f},
@@ -137,6 +137,21 @@ std::vector<GerstnerWave> makeMultipleWaves()
         {glm::normalize(glm::vec2(0.99f, 0.05f)), 0.022f, 2.2f, 0.03f, 4.1f},
         {glm::normalize(glm::vec2(-0.55f, -0.83f)), 0.014f, 1.5f, 0.02f, 5.8f},
     };
+
+    constexpr float maxTotalSteepness = 0.90f;
+    float totalSteepness = 0.0f;
+    for (const GerstnerWave& wave : waves) {
+        totalSteepness += wave.steepness;
+    }
+
+    if (totalSteepness > maxTotalSteepness) {
+        const float scale = maxTotalSteepness / totalSteepness;
+        for (GerstnerWave& wave : waves) {
+            wave.steepness *= scale;
+        }
+    }
+
+    return waves;
 }
 
 void uploadWaves(const Shader& shader, const std::vector<GerstnerWave>& waves)
