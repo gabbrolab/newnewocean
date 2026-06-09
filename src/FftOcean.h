@@ -39,10 +39,12 @@ struct PrototypeHeightField {
     std::vector<float> heights;
     std::vector<glm::vec2> slopes;
     std::vector<glm::vec2> displacements;
+    std::vector<float> foam;
 
     float sample(float x, float z) const;
     glm::vec2 sampleSlope(float x, float z) const;
     glm::vec2 sampleDisplacement(float x, float z) const;
+    float sampleFoam(float x, float z) const;
 };
 
 class FftOcean {

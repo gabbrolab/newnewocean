@@ -101,6 +101,21 @@ glm::vec2 PrototypeHeightField::sampleDisplacement(float x, float z) const
     return dx0 + (dx1 - dx0) * tz;
 }
 
+float PrototypeHeightField::sampleFoam(float x, float z) const
+{
+    if (resolution <= 0 || foam.empty() || patchLength <= 0.0f) {
+        return 0.0f;
+    }
+
+    const float uWrapped = x / patchLength - std::floor(x / patchLength);
+    const float vWrapped = z / patchLength - std::floor(z / patchLength);
+    const float fx = uWrapped * static_cast<float>(resolution);
+    const float fz = vWrapped * static_cast<float>(resolution);
+    const int x0 = static_cast<int>(std::floor(fx)) % resolution;
+    const int z0 = static_cast<int>(std::floor(fz)) % resolution;
+    return foam[static_cast<size_t>(z0 * resolution + x0)];
+}
+
 FftOcean::FftOcean(FftOceanConfig config, SpectrumParameters spectrum)
     : config_(config),
       spectrum_(spectrum)
@@ -216,6 +231,7 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
     field.heights.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
     field.slopes.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
     field.displacements.assign(static_cast<size_t>(outputResolution * outputResolution), glm::vec2(0.0f));
+    field.foam.assign(static_cast<size_t>(outputResolution * outputResolution), 0.0f);
     field.minHeight = std::numeric_limits<float>::max();
     field.maxHeight = std::numeric_limits<float>::lowest();
 
@@ -283,6 +299,29 @@ PrototypeHeightField FftOcean::buildPrototypeHeightField(int outputResolution, f
             field.slopes[static_cast<size_t>(z * m + x)] = glm::vec2(
                 (heightRight - heightLeft) / (2.0f * cellSize),
                 (heightUp - heightDown) / (2.0f * cellSize));
+        }
+    }
+
+    for (int z = 0; z < m; ++z) {
+        const int zPrev = (z - 1 + m) % m;
+        const int zNext = (z + 1) % m;
+        for (int x = 0; x < m; ++x) {
+            const int xPrev = (x - 1 + m) % m;
+            const int xNext = (x + 1) % m;
+            const glm::vec2 dispLeft = field.displacements[static_cast<size_t>(z * m + xPrev)];
+            const glm::vec2 dispRight = field.displacements[static_cast<size_t>(z * m + xNext)];
+            const glm::vec2 dispDown = field.displacements[static_cast<size_t>(zPrev * m + x)];
+            const glm::vec2 dispUp = field.displacements[static_cast<size_t>(zNext * m + x)];
+            const float dDxDx = (dispRight.x - dispLeft.x) / (2.0f * cellSize);
+            const float dDxDz = (dispUp.x - dispDown.x) / (2.0f * cellSize);
+            const float dDzDx = (dispRight.y - dispLeft.y) / (2.0f * cellSize);
+            const float dDzDz = (dispUp.y - dispDown.y) / (2.0f * cellSize);
+            const float jacobian = (1.0f + dDxDx) * (1.0f + dDzDz) - dDxDz * dDzDx;
+            const float compression = std::clamp((0.72f - jacobian) / 0.54f, 0.0f, 1.0f);
+            const float crest = std::clamp((field.heights[static_cast<size_t>(z * m + x)] - 0.15f) / 1.45f, 0.0f, 1.0f);
+            const float slopeAmount = std::clamp(glm::length(field.slopes[static_cast<size_t>(z * m + x)]) * 8.0f, 0.0f, 1.0f);
+            const float crestBreak = slopeAmount * std::clamp((crest + 0.25f) / 1.25f, 0.0f, 1.0f);
+            field.foam[static_cast<size_t>(z * m + x)] = std::max(compression * compression, crestBreak * 0.72f) * (0.35f + crest * 0.65f);
         }
     }
 

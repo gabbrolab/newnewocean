@@ -13,6 +13,7 @@ uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
 uniform sampler2D uFftSlopeMap;
+uniform sampler2D uFftFoamMap;
 uniform float uFftPatchLength;
 
 out vec4 FragColor;
@@ -198,6 +199,7 @@ void main()
         vec3 reflection = skyEnvironment(reflectedDirection);
         float height01 = smoothstep(-2.2, 2.2, vWorldPosition.y);
         float slope = clamp(1.0 - normal.y, 0.0, 1.0);
+        float fftFoam = clamp(texture(uFftFoamMap, fftUv).r * 2.35, 0.0, 1.0);
         float glint = pow(max(dot(normal, halfwayDirection), 0.0), 148.0);
         float broadSun = pow(max(dot(reflectedDirection, lightDirection), 0.0), 18.0);
         vec3 deepWater = vec3(0.004, 0.034, 0.047);
@@ -212,6 +214,7 @@ void main()
         color += vec3(1.0, 0.78, 0.48) * glint * (0.18 + fresnel * 1.25);
         color += vec3(0.9, 0.72, 0.45) * broadSun * fresnel * 0.035;
         color += vec3(0.55, 0.82, 0.92) * slope * 0.018;
+        color = mix(color, vec3(0.88, 0.96, 0.92), fftFoam * 0.82);
         float fog = clamp(1.0 - exp(-distanceToCamera * 0.014), 0.0, 0.82);
         color = mix(color, uFogColor, fog);
         color = acesToneMap(color * 1.08);
