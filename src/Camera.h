@@ -18,7 +18,7 @@ private:
 
     glm::vec3 position_;
     float yaw_ = -90.0f;
-    float pitch_ = -7.5f;
+    float pitch_ = -5.5f;
     float moveSpeed_ = 18.0f;
     float mouseSensitivity_ = 0.12f;
 };
