@@ -26,12 +26,12 @@ struct GerstnerWave {
 
 uniform GerstnerWave uWaves[MAX_WAVES];
 
-vec3 applyWaves(vec3 position)
+vec2 coarseWarp(vec3 position)
 {
-    vec3 displaced = position;
+    vec2 warp = vec2(0.0);
 
     for (int i = 0; i < MAX_WAVES; ++i) {
-        if (i >= uWaveCount) {
+        if (i >= uWaveCount || i >= 3) {
             break;
         }
 
@@ -40,6 +40,31 @@ vec3 applyWaves(vec3 position)
         float k = 2.0 * PI / wave.wavelength;
         float omega = sqrt(GRAVITY * k);
         float theta = k * dot(direction, position.xz) - omega * uTime + wave.phase;
+        warp += direction * cos(theta) * wave.amplitude;
+    }
+
+    return warp * 0.16;
+}
+
+vec3 applyWaves(vec3 position)
+{
+    vec3 displaced = position;
+    vec2 warp = coarseWarp(position);
+
+    for (int i = 0; i < MAX_WAVES; ++i) {
+        if (i >= uWaveCount) {
+            break;
+        }
+
+        GerstnerWave wave = uWaves[i];
+        vec2 direction = normalize(wave.direction);
+        vec2 sampleXZ = position.xz;
+        if (i >= 3) {
+            sampleXZ += warp;
+        }
+        float k = 2.0 * PI / wave.wavelength;
+        float omega = sqrt(GRAVITY * k);
+        float theta = k * dot(direction, sampleXZ) - omega * uTime + wave.phase;
 
         if (uWaveMode == 1) {
             displaced.y += wave.amplitude * sin(theta);
@@ -56,6 +81,7 @@ vec3 analyticalNormal(vec3 position)
 {
     vec3 tangentX = vec3(1.0, 0.0, 0.0);
     vec3 tangentZ = vec3(0.0, 0.0, 1.0);
+    vec2 warp = coarseWarp(position);
 
     for (int i = 0; i < MAX_WAVES; ++i) {
         if (i >= uWaveCount) {
@@ -64,9 +90,13 @@ vec3 analyticalNormal(vec3 position)
 
         GerstnerWave wave = uWaves[i];
         vec2 direction = normalize(wave.direction);
+        vec2 sampleXZ = position.xz;
+        if (i >= 3) {
+            sampleXZ += warp;
+        }
         float k = 2.0 * PI / wave.wavelength;
         float omega = sqrt(GRAVITY * k);
-        float theta = k * dot(direction, position.xz) - omega * uTime + wave.phase;
+        float theta = k * dot(direction, sampleXZ) - omega * uTime + wave.phase;
         float sinTheta = sin(theta);
         float cosTheta = cos(theta);
         float q = wave.steepness;
