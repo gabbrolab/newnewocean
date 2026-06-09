@@ -129,16 +129,16 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     std::vector<GerstnerWave> waves = {
-        {glm::normalize(glm::vec2(1.00f, 0.15f)), 1.25f, 48.0f, 0.16f, 0.0f},
-        {glm::normalize(glm::vec2(0.75f, 0.66f)), 0.75f, 32.0f, 0.14f, 1.3f},
-        {glm::normalize(glm::vec2(0.20f, 0.98f)), 0.45f, 22.0f, 0.12f, 3.1f},
-        {glm::normalize(glm::vec2(-0.35f, 0.94f)), 0.24f, 14.0f, 0.10f, 4.6f},
-        {glm::normalize(glm::vec2(0.93f, -0.36f)), 0.16f, 9.5f, 0.08f, 2.2f},
-        {glm::normalize(glm::vec2(0.45f, 0.89f)), 0.10f, 6.8f, 0.07f, 5.4f},
-        {glm::normalize(glm::vec2(-0.85f, 0.52f)), 0.065f, 4.8f, 0.06f, 0.7f},
-        {glm::normalize(glm::vec2(0.14f, -0.99f)), 0.045f, 3.4f, 0.055f, 2.8f},
-        {glm::normalize(glm::vec2(-0.72f, 0.69f)), 0.028f, 2.6f, 0.035f, 4.9f},
-        {glm::normalize(glm::vec2(0.97f, 0.24f)), 0.018f, 2.0f, 0.024f, 1.6f},
+        {glm::normalize(glm::vec2(1.00f, 0.15f)), 1.18f, 53.0f, 0.15f, 0.0f},
+        {glm::normalize(glm::vec2(0.68f, 0.73f)), 0.68f, 34.7f, 0.13f, 1.9f},
+        {glm::normalize(glm::vec2(0.08f, 0.997f)), 0.39f, 23.6f, 0.11f, 4.2f},
+        {glm::normalize(glm::vec2(-0.41f, 0.91f)), 0.22f, 15.3f, 0.09f, 2.6f},
+        {glm::normalize(glm::vec2(0.96f, -0.27f)), 0.14f, 10.4f, 0.07f, 5.7f},
+        {glm::normalize(glm::vec2(0.36f, 0.93f)), 0.085f, 7.1f, 0.055f, 0.8f},
+        {glm::normalize(glm::vec2(-0.79f, 0.61f)), 0.052f, 5.2f, 0.045f, 3.4f},
+        {glm::normalize(glm::vec2(0.18f, -0.98f)), 0.030f, 3.65f, 0.035f, 2.2f},
+        {glm::normalize(glm::vec2(-0.67f, 0.74f)), 0.020f, 2.85f, 0.026f, 5.1f},
+        {glm::normalize(glm::vec2(0.91f, 0.41f)), 0.012f, 2.25f, 0.018f, 1.4f},
     };
 
     constexpr float maxTotalSteepness = 0.90f;

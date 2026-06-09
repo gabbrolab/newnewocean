@@ -20,6 +20,19 @@ const float GRAVITY = 9.81;
 const int MAX_WAVES = 12;
 const int DETAIL_NORMAL_START = 6;
 
+const bool ENABLE_BASE_COLOR = true;
+const bool ENABLE_DIFFUSE = true;
+const bool ENABLE_SPECULAR = true;
+const bool ENABLE_FRESNEL = true;
+const bool ENABLE_REFLECTIONS = true;
+const bool ENABLE_FOAM = true;
+const bool ENABLE_NORMAL_DETAIL = true;
+
+const float SPECULAR_STRENGTH = 0.26;
+const float REFLECTION_STRENGTH = 0.64;
+const float FOAM_STRENGTH = 0.92;
+const float MICRO_NORMAL_STRENGTH = 0.78;
+
 struct GerstnerWave {
     vec2 direction;
     float amplitude;
@@ -117,9 +130,10 @@ vec3 analyticalNormal(vec3 position)
         float q = wave.steepness;
         float a = wave.amplitude;
         if (i >= DETAIL_NORMAL_START) {
-            float detailFade = 1.0 - smoothstep(12.0, 72.0, length(uCameraPosition.xz - position.xz));
-            q *= detailFade * 0.70;
-            a *= detailFade * 0.70;
+            float detailFade = 1.0 - smoothstep(16.0, 96.0, length(uCameraPosition.xz - position.xz));
+            float detailStrength = ENABLE_NORMAL_DETAIL ? MICRO_NORMAL_STRENGTH : 0.0;
+            q *= detailFade * detailStrength;
+            a *= detailFade * detailStrength;
         }
 
         if (uWaveMode == 1) {
@@ -171,34 +185,47 @@ void main()
     vec3 viewDirection = normalize(uCameraPosition - vWorldPosition);
     vec3 halfwayDirection = normalize(lightDirection + viewDirection);
 
-    float diffuse = max(dot(normal, lightDirection), 0.0);
+    float diffuse = ENABLE_DIFFUSE ? max(dot(normal, lightDirection), 0.0) : 0.0;
     float distanceToCamera = length(uCameraPosition - vWorldPosition);
-    float specular = pow(max(dot(normal, halfwayDirection), 0.0), 68.0);
-    specular *= 1.0 - smoothstep(70.0, 220.0, distanceToCamera);
-    float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
+    float specular = pow(max(dot(normal, halfwayDirection), 0.0), 104.0);
+    specular *= 1.0 - smoothstep(85.0, 260.0, distanceToCamera);
+    specular *= ENABLE_SPECULAR ? SPECULAR_STRENGTH : 0.0;
+    float fresnel = ENABLE_FRESNEL ? fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204) : 0.0204;
     vec3 reflectedDirection = reflect(-viewDirection, normal);
-    vec3 reflection = skyEnvironment(reflectedDirection);
+    vec3 reflection = ENABLE_REFLECTIONS ? skyEnvironment(reflectedDirection) : vec3(0.0);
     float slope = clamp(1.0 - normal.y, 0.0, 1.0);
     vec2 swellDirection = normalize(vec2(1.0, 0.15));
     vec2 crestDirection = vec2(-swellDirection.y, swellDirection.x);
-    float crestMask = smoothstep(0.05, 1.15, vWorldPosition.y) * smoothstep(0.030, 0.150, slope);
+    float crestMask = smoothstep(-0.05, 1.05, vWorldPosition.y) * smoothstep(0.025, 0.130, slope);
     float longFoam = sin(dot(vWorldPosition.xz, crestDirection) * 0.34 + dot(vWorldPosition.xz, swellDirection) * 0.055);
     float brokenFoam = smoothstep(-0.10, 0.72, longFoam + fbmNoise(vWorldPosition.xz * 0.075 + uTime * 0.025) * 0.55);
     float foamDistanceFade = 1.0 - smoothstep(65.0, 210.0, distanceToCamera);
-    float foam = clamp(crestMask * brokenFoam * foamDistanceFade * 0.72, 0.0, 1.0);
+    float foam = clamp(crestMask * brokenFoam * foamDistanceFade * FOAM_STRENGTH, 0.0, 1.0);
+    foam *= ENABLE_FOAM ? 1.0 : 0.0;
 
-    vec3 deepWater = vec3(0.010, 0.070, 0.095);
-    vec3 shallowWater = vec3(0.035, 0.185, 0.225);
-    vec3 waterColor = mix(deepWater, shallowWater, smoothstep(-1.4, 1.6, vWorldPosition.y));
+    float height01 = smoothstep(-1.8, 1.6, vWorldPosition.y);
+    float troughShade = smoothstep(-1.1, 0.55, vWorldPosition.y);
+    float naturalVariation = fbmNoise(vSourcePosition.xz * 0.022 + vec2(uTime * 0.010, -uTime * 0.006));
+    vec3 abyssWater = vec3(0.004, 0.038, 0.052);
+    vec3 bodyWater = vec3(0.014, 0.085, 0.102);
+    vec3 crestWater = vec3(0.045, 0.155, 0.160);
+    vec3 waterColor = mix(abyssWater, bodyWater, troughShade);
+    waterColor = mix(waterColor, crestWater, height01 * 0.42);
+    waterColor *= 0.86 + naturalVariation * 0.20;
+    if (!ENABLE_BASE_COLOR) {
+        waterColor = vec3(0.0);
+    }
     vec3 sunColor = vec3(1.00, 0.86, 0.62);
     vec3 glintColor = vec3(0.66, 0.88, 1.00);
 
     float gridFade = smoothstep(380.0, 40.0, length(vWorldPosition.xz));
-    vec3 color = waterColor * (0.18 + 0.58 * diffuse);
-    color = mix(color, reflection, clamp(fresnel * 1.10, 0.0, 0.56));
-    color += sunColor * specular * (0.18 + 1.25 * fresnel);
-    color += glintColor * fresnel * 0.07;
-    color = mix(color, vec3(0.86, 0.98, 0.95), foam);
+    vec3 color = waterColor * (0.52 + 0.30 * diffuse);
+    color += vec3(0.018, 0.055, 0.055) * slope * (0.35 + 0.65 * height01);
+    float grazingReflection = smoothstep(0.018, 0.72, fresnel) * REFLECTION_STRENGTH;
+    color = mix(color, reflection, clamp(grazingReflection, 0.0, 0.48));
+    color += sunColor * specular * (0.14 + 1.65 * fresnel);
+    color += glintColor * fresnel * 0.026;
+    color = mix(color, vec3(0.84, 0.95, 0.91), foam * 0.82);
     color = mix(color * 0.65, color, gridFade);
 
     float heightFog = smoothstep(8.0, -2.0, vWorldPosition.y);
