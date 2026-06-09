@@ -136,9 +136,9 @@ std::vector<GerstnerWave> makeMultipleWaves()
         {glm::normalize(glm::vec2(0.93f, -0.36f)), 0.16f, 9.5f, 0.08f, 2.2f},
         {glm::normalize(glm::vec2(0.45f, 0.89f)), 0.10f, 6.8f, 0.07f, 5.4f},
         {glm::normalize(glm::vec2(-0.85f, 0.52f)), 0.065f, 4.8f, 0.06f, 0.7f},
-        {glm::normalize(glm::vec2(0.14f, -0.99f)), 0.035f, 3.2f, 0.04f, 2.8f},
-        {glm::normalize(glm::vec2(0.99f, 0.05f)), 0.022f, 2.2f, 0.03f, 4.1f},
-        {glm::normalize(glm::vec2(-0.55f, -0.83f)), 0.014f, 1.5f, 0.02f, 5.8f},
+        {glm::normalize(glm::vec2(0.14f, -0.99f)), 0.045f, 3.4f, 0.055f, 2.8f},
+        {glm::normalize(glm::vec2(-0.72f, 0.69f)), 0.028f, 2.6f, 0.035f, 4.9f},
+        {glm::normalize(glm::vec2(0.97f, 0.24f)), 0.018f, 2.0f, 0.024f, 1.6f},
     };
 
     constexpr float maxTotalSteepness = 0.90f;

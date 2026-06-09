@@ -16,6 +16,7 @@ out vec3 vSourcePosition;
 const float PI = 3.14159265359;
 const float GRAVITY = 9.81;
 const int MAX_WAVES = 12;
+const int GEOMETRY_WAVES = 7;
 
 struct GerstnerWave {
     vec2 direction;
@@ -53,7 +54,7 @@ vec3 applyWaves(vec3 position)
     vec2 warp = coarseWarp(position);
 
     for (int i = 0; i < MAX_WAVES; ++i) {
-        if (i >= uWaveCount) {
+        if (i >= uWaveCount || i >= GEOMETRY_WAVES) {
             break;
         }
 
@@ -85,7 +86,7 @@ vec3 analyticalNormal(vec3 position)
     vec2 warp = coarseWarp(position);
 
     for (int i = 0; i < MAX_WAVES; ++i) {
-        if (i >= uWaveCount) {
+        if (i >= uWaveCount || i >= GEOMETRY_WAVES) {
             break;
         }
 
