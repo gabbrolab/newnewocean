@@ -37,8 +37,10 @@ struct PrototypeHeightField {
     float minHeight = 0.0f;
     float maxHeight = 0.0f;
     std::vector<float> heights;
+    std::vector<glm::vec2> slopes;
 
     float sample(float x, float z) const;
+    glm::vec2 sampleSlope(float x, float z) const;
 };
 
 class FftOcean {

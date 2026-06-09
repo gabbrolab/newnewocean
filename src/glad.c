@@ -30,6 +30,7 @@ PFNGLUNIFORM3FVPROC glad_glUniform3fv = NULL;
 PFNGLUNIFORM1FPROC glad_glUniform1f = NULL;
 PFNGLUNIFORM1IPROC glad_glUniform1i = NULL;
 PFNGLDEPTHFUNCPROC glad_glDepthFunc = NULL;
+PFNGLACTIVETEXTUREPROC glad_glActiveTexture = NULL;
 PFNGLDISPATCHCOMPUTEPROC glad_glDispatchCompute = NULL;
 PFNGLMEMORYBARRIERPROC glad_glMemoryBarrier = NULL;
 PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture = NULL;
@@ -71,6 +72,7 @@ int gladLoadGLLoader(GLADloadproc load)
     glad_glUniform1f = (PFNGLUNIFORM1FPROC)load_required(load, "glUniform1f");
     glad_glUniform1i = (PFNGLUNIFORM1IPROC)load_required(load, "glUniform1i");
     glad_glDepthFunc = (PFNGLDEPTHFUNCPROC)load_required(load, "glDepthFunc");
+    glad_glActiveTexture = (PFNGLACTIVETEXTUREPROC)load_required(load, "glActiveTexture");
     glad_glDispatchCompute = (PFNGLDISPATCHCOMPUTEPROC)load_required(load, "glDispatchCompute");
     glad_glMemoryBarrier = (PFNGLMEMORYBARRIERPROC)load_required(load, "glMemoryBarrier");
     glad_glBindImageTexture = (PFNGLBINDIMAGETEXTUREPROC)load_required(load, "glBindImageTexture");
@@ -78,5 +80,5 @@ int gladLoadGLLoader(GLADloadproc load)
     return glad_glGenVertexArrays && glad_glBindVertexArray && glad_glGenBuffers &&
            glad_glBindBuffer && glad_glBufferData && glad_glCreateShader &&
            glad_glCreateProgram && glad_glUseProgram && glad_glUniformMatrix4fv &&
-           glad_glDispatchCompute && glad_glMemoryBarrier && glad_glBindImageTexture;
+           glad_glActiveTexture && glad_glDispatchCompute && glad_glMemoryBarrier && glad_glBindImageTexture;
 }
