@@ -8,6 +8,8 @@ uniform mat4 uProjection;
 uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
+uniform sampler2D uFftHeightMap;
+uniform float uFftPatchLength;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -51,6 +53,12 @@ vec2 coarseWarp(vec3 position)
 vec3 applyWaves(vec3 position)
 {
     vec3 displaced = position;
+    if (uWaveMode == 3) {
+        vec2 uv = fract(position.xz / uFftPatchLength);
+        displaced.y += texture(uFftHeightMap, uv).r;
+        return displaced;
+    }
+
     vec2 warp = coarseWarp(position);
 
     for (int i = 0; i < MAX_WAVES; ++i) {
