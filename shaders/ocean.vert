@@ -7,38 +7,53 @@ uniform mat4 uView;
 uniform mat4 uProjection;
 uniform float uTime;
 uniform int uWaveMode;
+uniform int uWaveCount;
 
 out vec3 vWorldPosition;
 
 const float PI = 3.14159265359;
 const float GRAVITY = 9.81;
+const int MAX_WAVES = 12;
 
-vec3 singleGerstner(vec3 position)
+struct GerstnerWave {
+    vec2 direction;
+    float amplitude;
+    float wavelength;
+    float steepness;
+    float phase;
+};
+
+uniform GerstnerWave uWaves[MAX_WAVES];
+
+vec3 applyWaves(vec3 position)
 {
-    vec2 direction = normalize(vec2(1.0, 0.22));
-    float amplitude = 2.1;
-    float wavelength = 24.0;
-    float steepness = 0.58;
-    float k = 2.0 * PI / wavelength;
-    float omega = sqrt(GRAVITY * k);
-    float theta = k * dot(direction, position.xz) - omega * uTime;
+    vec3 displaced = position;
 
-    if (uWaveMode == 1) {
-        position.y += amplitude * sin(theta);
-        return position;
+    for (int i = 0; i < MAX_WAVES; ++i) {
+        if (i >= uWaveCount) {
+            break;
+        }
+
+        GerstnerWave wave = uWaves[i];
+        vec2 direction = normalize(wave.direction);
+        float k = 2.0 * PI / wave.wavelength;
+        float omega = sqrt(GRAVITY * k);
+        float theta = k * dot(direction, position.xz) - omega * uTime + wave.phase;
+
+        if (uWaveMode == 1) {
+            displaced.y += wave.amplitude * sin(theta);
+        } else if (uWaveMode == 2) {
+            displaced.xz += (wave.steepness / k) * direction * cos(theta);
+            displaced.y += wave.amplitude * sin(theta);
+        }
     }
 
-    if (uWaveMode == 2) {
-        position.xz += (steepness / k) * direction * cos(theta);
-        position.y += amplitude * sin(theta);
-    }
-
-    return position;
+    return displaced;
 }
 
 void main()
 {
-    vec3 displaced = singleGerstner(aPosition);
+    vec3 displaced = applyWaves(aPosition);
     vec4 worldPosition = uModel * vec4(displaced, 1.0);
     vWorldPosition = worldPosition.xyz;
     gl_Position = uProjection * uView * worldPosition;

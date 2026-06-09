@@ -123,6 +123,30 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
     out.write(reinterpret_cast<const char*>(bmp.data()), static_cast<std::streamsize>(bmp.size()));
 }
 
+std::vector<GerstnerWave> makeMultipleWaves()
+{
+    return {
+        {glm::normalize(glm::vec2(1.00f, 0.18f)), 1.35f, 34.0f, 0.18f, 0.0f},
+        {glm::normalize(glm::vec2(0.35f, 0.94f)), 0.72f, 22.0f, 0.14f, 1.7f},
+        {glm::normalize(glm::vec2(-0.62f, 0.78f)), 0.42f, 15.0f, 0.11f, 3.2f},
+        {glm::normalize(glm::vec2(0.88f, -0.48f)), 0.28f, 10.5f, 0.08f, 5.1f},
+        {glm::normalize(glm::vec2(-0.18f, -0.98f)), 0.16f, 7.0f, 0.06f, 2.4f},
+    };
+}
+
+void uploadWaves(const Shader& shader, const std::vector<GerstnerWave>& waves)
+{
+    shader.setInt("uWaveCount", static_cast<int>(waves.size()));
+    for (size_t i = 0; i < waves.size(); ++i) {
+        const std::string prefix = "uWaves[" + std::to_string(i) + "].";
+        shader.setVec2(prefix + "direction", waves[i].direction);
+        shader.setFloat(prefix + "amplitude", waves[i].amplitude);
+        shader.setFloat(prefix + "wavelength", waves[i].wavelength);
+        shader.setFloat(prefix + "steepness", waves[i].steepness);
+        shader.setFloat(prefix + "phase", waves[i].phase);
+    }
+}
+
 void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& waveMode)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
@@ -194,6 +218,7 @@ int main(int argc, char** argv)
 
     Shader oceanShader("shaders/ocean.vert", "shaders/ocean.frag");
     Ocean ocean(120.0f, 160);
+    const std::vector<GerstnerWave> waves = makeMultipleWaves();
 
     auto previousTime = std::chrono::steady_clock::now();
     int renderedFrames = 0;
@@ -225,6 +250,7 @@ int main(int argc, char** argv)
         oceanShader.setMat4("uProjection", projection);
         oceanShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
         oceanShader.setInt("uWaveMode", waveMode);
+        uploadWaves(oceanShader, waves);
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
         ocean.draw();
