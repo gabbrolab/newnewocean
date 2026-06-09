@@ -441,7 +441,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
 
-    GLFWwindow* window = glfwCreateWindow(options.width, options.height, "Gabbro's Lab - Gerstner Ocean", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(options.width, options.height, "Gabbro's Lab - Ocean Lab", nullptr, nullptr);
     if (window == nullptr) {
         std::cerr << "Failed to create GLFW window.\n";
         glfwTerminate();
@@ -463,7 +463,7 @@ int main(int argc, char** argv)
     glEnable(GL_MULTISAMPLE);
     glClearColor(0.04f, 0.07f, 0.10f, 1.0f);
 
-    Camera camera(glm::vec3(-18.0f, 3.1f, 30.0f));
+    Camera camera(options.waveMode == 3 ? glm::vec3(-34.0f, 2.35f, 46.0f) : glm::vec3(-18.0f, 3.1f, 30.0f));
     gInput.camera = &camera;
     glfwSetCursorPosCallback(window, mouseCallback);
 
@@ -487,7 +487,7 @@ int main(int argc, char** argv)
             fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f),
             fftDetailOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f))
         : fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f);
-    Ocean fftPrototypeOcean(800.0f, quality.oceanMeshResolution);
+    Ocean fftPrototypeOcean(1400.0f, quality.oceanMeshResolution);
     const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
     const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
     const unsigned int fftDisplacementTexture = createDisplacementTexture(fftPrototypeHeight);
@@ -558,13 +558,15 @@ int main(int argc, char** argv)
             glm::radians(58.0f),
             static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight),
             0.1f,
-            1400.0f);
+            2400.0f);
 
         glDepthFunc(GL_LEQUAL);
         skyShader.use();
         skyShader.setMat4("uView", glm::mat4(glm::mat3(camera.viewMatrix())));
         skyShader.setMat4("uProjection", projection);
-        const glm::vec3 sunDirection = glm::normalize(glm::vec3(-0.62f, 0.28f, -0.73f));
+        const glm::vec3 sunDirection = waveMode == 3
+            ? glm::normalize(glm::vec3(-0.72f, 0.18f, -0.67f))
+            : glm::normalize(glm::vec3(-0.62f, 0.28f, -0.73f));
         skyShader.setVec3("uLightDirection", sunDirection);
         glDrawArrays(GL_TRIANGLES, 0, 3);
         glDepthFunc(GL_LESS);
@@ -584,7 +586,7 @@ int main(int argc, char** argv)
         uploadWaves(oceanShader, waves);
         oceanShader.setVec3("uCameraPosition", camera.position());
         oceanShader.setVec3("uLightDirection", sunDirection);
-        oceanShader.setVec3("uFogColor", glm::vec3(0.026f, 0.060f, 0.082f));
+        oceanShader.setVec3("uFogColor", waveMode == 3 ? glm::vec3(0.020f, 0.052f, 0.070f) : glm::vec3(0.026f, 0.060f, 0.082f));
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
         glActiveTexture(GL_TEXTURE0 + 1);

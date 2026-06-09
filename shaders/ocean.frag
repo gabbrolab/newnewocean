@@ -215,7 +215,9 @@ void main()
         color += vec3(0.9, 0.72, 0.45) * broadSun * fresnel * 0.035;
         color += vec3(0.55, 0.82, 0.92) * slope * 0.018;
         color = mix(color, vec3(0.88, 0.96, 0.92), fftFoam * 0.82);
-        float fog = clamp(1.0 - exp(-distanceToCamera * 0.014), 0.0, 0.82);
+        float horizonFog = smoothstep(45.0, 620.0, distanceToCamera);
+        float fog = clamp(1.0 - exp(-distanceToCamera * 0.018), 0.0, 0.88);
+        fog = max(fog, horizonFog * 0.52);
         color = mix(color, uFogColor, fog);
         color = acesToneMap(color * 1.08);
         color = pow(color, vec3(1.0 / 2.2));
