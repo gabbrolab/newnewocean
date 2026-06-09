@@ -9,7 +9,9 @@ uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
 uniform sampler2D uFftHeightMap;
+uniform sampler2D uFftDisplacementMap;
 uniform float uFftPatchLength;
+uniform float uFftChoppiness;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
@@ -55,6 +57,7 @@ vec3 applyWaves(vec3 position)
     vec3 displaced = position;
     if (uWaveMode == 3) {
         vec2 uv = fract(position.xz / uFftPatchLength);
+        displaced.xz += texture(uFftDisplacementMap, uv).xy * uFftChoppiness;
         displaced.y += texture(uFftHeightMap, uv).r;
         return displaced;
     }
