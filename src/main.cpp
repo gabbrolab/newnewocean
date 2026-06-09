@@ -19,6 +19,7 @@ struct AppOptions {
     int height = 720;
     int captureFrames = 2;
     int waveMode = 2;
+    bool showWire = false;
     std::string capturePath;
 };
 
@@ -78,6 +79,8 @@ AppOptions parseOptions(int argc, char** argv)
             } else if (mode == "gerstner") {
                 options.waveMode = 2;
             }
+        } else if (arg == "--wire") {
+            options.showWire = true;
         }
     }
     return options;
@@ -210,6 +213,7 @@ int main(int argc, char** argv)
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_SAMPLES, 4);
 
     GLFWwindow* window = glfwCreateWindow(options.width, options.height, "Gabbro's Lab - Gerstner Ocean", nullptr, nullptr);
     if (window == nullptr) {
@@ -230,6 +234,7 @@ int main(int argc, char** argv)
     }
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_MULTISAMPLE);
     glClearColor(0.04f, 0.07f, 0.10f, 1.0f);
 
     Camera camera(glm::vec3(0.0f, 14.0f, 35.0f));
@@ -238,7 +243,7 @@ int main(int argc, char** argv)
 
     Shader oceanShader("shaders/ocean.vert", "shaders/ocean.frag");
     Shader skyShader("shaders/sky.vert", "shaders/sky.frag");
-    Ocean ocean(120.0f, 160);
+    Ocean ocean(180.0f, 384);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
 
     auto previousTime = std::chrono::steady_clock::now();
@@ -286,11 +291,13 @@ int main(int argc, char** argv)
         oceanShader.setFloat("uAlpha", 1.0f);
         ocean.draw();
 
-        oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
-        oceanShader.setFloat("uAlpha", 0.45f);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        ocean.draw();
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        if (options.showWire) {
+            oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
+            oceanShader.setFloat("uAlpha", 0.45f);
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+            ocean.draw();
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        }
 
         ++renderedFrames;
         if (!options.capturePath.empty() && renderedFrames >= options.captureFrames) {

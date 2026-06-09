@@ -11,6 +11,7 @@ uniform int uWaveCount;
 
 out vec3 vWorldPosition;
 out vec3 vNormal;
+out vec3 vSourcePosition;
 
 const float PI = 3.14159265359;
 const float GRAVITY = 9.81;
@@ -124,6 +125,7 @@ void main()
     vec3 displaced = applyWaves(aPosition);
     vec4 worldPosition = uModel * vec4(displaced, 1.0);
     vWorldPosition = worldPosition.xyz;
+    vSourcePosition = aPosition;
     vNormal = mat3(transpose(inverse(uModel))) * analyticalNormal(aPosition);
     gl_Position = uProjection * uView * worldPosition;
 }
