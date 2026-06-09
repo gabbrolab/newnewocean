@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <complex>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -106,12 +107,12 @@ AppOptions parseOptions(int argc, char** argv)
 QualitySettings qualitySettingsFor(const std::string& quality)
 {
     if (quality == "low") {
-        return {32, 256, 0.090f, false};
+        return {256, 384, 0.033f, false};
     }
     if (quality == "high") {
-        return {64, 512, 0.038f, true};
+        return {256, 1024, 0.016f, true};
     }
-    return {64, 384, 0.055f, true};
+    return {256, 768, 0.016f, true};
 }
 
 void saveFramebufferBmp(const std::filesystem::path& path, int width, int height)
@@ -175,6 +176,31 @@ unsigned int createHeightTexture(const PrototypeHeightField& field)
         field.heights.data());
     glBindTexture(GL_TEXTURE_2D, 0);
     return texture;
+}
+
+unsigned int createComplexTexture(int resolution, const float* data)
+{
+    unsigned int texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, resolution, resolution, 0, GL_RG, GL_FLOAT, data);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
+
+std::vector<float> packSpectrumTexture(const FftOcean& ocean)
+{
+    std::vector<float> packed;
+    packed.reserve(ocean.initialSpectrum().size() * 2);
+    for (const std::complex<float>& value : ocean.initialSpectrum()) {
+        packed.push_back(value.real());
+        packed.push_back(value.imag());
+    }
+    return packed;
 }
 
 void uploadHeightTexture(unsigned int texture, const PrototypeHeightField& field)
@@ -472,29 +498,14 @@ int main(int argc, char** argv)
     Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
     const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
-    SpectrumParameters detailSpectrum;
-    detailSpectrum.windSpeed = 8.5f;
-    detailSpectrum.windDirection = glm::normalize(glm::vec2(0.82f, 0.55f));
-    detailSpectrum.fetch = 24000.0f;
-    detailSpectrum.gamma = 2.2f;
-    detailSpectrum.amplitudeScale = 0.28f;
-    detailSpectrum.lowCutoff = 0.055f;
-    detailSpectrum.highCutoff = 5.8f;
-    detailSpectrum.directionalSpreadPower = 3.5f;
-    const FftOcean fftDetailOcean(FftOceanConfig {256, 145.0f, 4242u}, detailSpectrum);
-    PrototypeHeightField fftPrototypeHeight = quality.useDetailCascade
-        ? combineCascades(
-            fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f),
-            fftDetailOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f))
-        : fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, 0.0f);
-    Ocean fftPrototypeOcean(1400.0f, quality.oceanMeshResolution);
-    const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
-    const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
-    const unsigned int fftDisplacementTexture = createDisplacementTexture(fftPrototypeHeight);
-    const unsigned int fftFoamTexture = createFoamTexture(fftPrototypeHeight);
-    std::vector<float> fftAccumulatedFoam = fftPrototypeHeight.foam;
+    Ocean fftPrototypeOcean(920.0f, quality.oceanMeshResolution);
+    const std::vector<float> h0Packed = packSpectrumTexture(fftOcean);
+    const unsigned int fftH0Texture = createComplexTexture(fftOcean.config().resolution, h0Packed.data());
+    const unsigned int fftSpectrumTexture = createComplexTexture(fftOcean.config().resolution, nullptr);
+    unsigned int fftHeightTexture = fftSpectrumTexture;
+    GpuFftTransform fftTransform(fftOcean.config().resolution);
+    Shader fftEvolveShader("shaders/fft_evolve_height.comp");
     const FftSpectrumStats& fftStats = fftOcean.stats();
-    const GpuFftStats gpuFftStats = GpuFftSelfTest::runInverseTransform(256);
     std::cout << "FFT spectrum: "
               << fftOcean.config().resolution << "x" << fftOcean.config().resolution
               << ", patch " << fftOcean.config().patchLength << "m"
@@ -503,23 +514,14 @@ int main(int argc, char** argv)
               << ", energy " << fftStats.totalEnergy
               << (fftStats.hasInvalidValues ? " (invalid values detected)" : "")
               << "\n";
-    std::cout << "FFT prototype height: min " << fftPrototypeHeight.minHeight
-              << ", max " << fftPrototypeHeight.maxHeight << "\n";
     std::cout << "FFT quality: " << options.quality
-              << ", samples " << quality.fftSampleResolution << "x" << quality.fftSampleResolution
+              << ", GPU FFT " << fftOcean.config().resolution << "x" << fftOcean.config().resolution
               << ", mesh " << quality.oceanMeshResolution << "x" << quality.oceanMeshResolution
-              << ", cascades " << (quality.useDetailCascade ? 2 : 1)
               << ", update " << quality.updateInterval << "s\n";
-    std::cout << "GPU FFT self-test: min " << gpuFftStats.minValue
-              << ", max " << gpuFftStats.maxValue
-              << ", avg abs " << gpuFftStats.averageAbsValue
-              << (gpuFftStats.hasInvalidValues ? " (invalid values detected)" : "")
-              << "\n";
     fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
 
     auto previousTime = std::chrono::steady_clock::now();
     float previousFftUpdateTime = -1.0f;
-    float previousFoamTime = 0.0f;
     int renderedFrames = 0;
     int waveMode = options.waveMode;
 
@@ -532,19 +534,18 @@ int main(int argc, char** argv)
         const float appTime = static_cast<float>(glfwGetTime());
 
         if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > quality.updateInterval)) {
-            fftPrototypeHeight = quality.useDetailCascade
-                ? combineCascades(
-                    fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 0.85f),
-                    fftDetailOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 1.55f))
-                : fftOcean.buildPrototypeHeightField(quality.fftSampleResolution, appTime * 0.85f);
-            const float foamDeltaTime = previousFftUpdateTime < 0.0f ? 0.0f : appTime - previousFoamTime;
-            accumulateFoam(fftPrototypeHeight, fftAccumulatedFoam, foamDeltaTime);
-            uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
-            uploadSlopeTexture(fftSlopeTexture, fftPrototypeHeight);
-            uploadDisplacementTexture(fftDisplacementTexture, fftPrototypeHeight);
-            uploadFoamTexture(fftFoamTexture, fftPrototypeHeight);
+            fftEvolveShader.use();
+            fftEvolveShader.setInt("uResolution", fftOcean.config().resolution);
+            fftEvolveShader.setFloat("uPatchLength", fftOcean.config().patchLength);
+            fftEvolveShader.setFloat("uTime", appTime * 0.85f);
+            fftEvolveShader.setFloat("uGravity", fftOcean.spectrum().gravity);
+            fftEvolveShader.setFloat("uHeightScale", 110.0f);
+            glBindImageTexture(0, fftH0Texture, 0, GL_FALSE, 0, GL_READ_ONLY, GL_RG32F);
+            glBindImageTexture(1, fftSpectrumTexture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RG32F);
+            glDispatchCompute(static_cast<unsigned int>((fftOcean.config().resolution + 7) / 8), static_cast<unsigned int>((fftOcean.config().resolution + 7) / 8), 1);
+            glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT | GL_TEXTURE_FETCH_BARRIER_BIT);
+            fftHeightTexture = fftTransform.inverse(fftSpectrumTexture);
             previousFftUpdateTime = appTime;
-            previousFoamTime = appTime;
         }
 
         int framebufferWidth = 0;
@@ -578,10 +579,7 @@ int main(int argc, char** argv)
         oceanShader.setFloat("uTime", appTime);
         oceanShader.setInt("uWaveMode", waveMode);
         oceanShader.setInt("uFftHeightMap", 0);
-        oceanShader.setInt("uFftSlopeMap", 1);
-        oceanShader.setInt("uFftDisplacementMap", 2);
-        oceanShader.setInt("uFftFoamMap", 3);
-        oceanShader.setFloat("uFftPatchLength", fftPrototypeHeight.patchLength);
+        oceanShader.setFloat("uFftPatchLength", fftOcean.config().patchLength);
         oceanShader.setFloat("uFftChoppiness", 0.85f);
         uploadWaves(oceanShader, waves);
         oceanShader.setVec3("uCameraPosition", camera.position());
@@ -589,13 +587,6 @@ int main(int argc, char** argv)
         oceanShader.setVec3("uFogColor", waveMode == 3 ? glm::vec3(0.020f, 0.052f, 0.070f) : glm::vec3(0.026f, 0.060f, 0.082f));
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
-        glActiveTexture(GL_TEXTURE0 + 1);
-        glBindTexture(GL_TEXTURE_2D, fftSlopeTexture);
-        glActiveTexture(GL_TEXTURE0 + 2);
-        glBindTexture(GL_TEXTURE_2D, fftDisplacementTexture);
-        glActiveTexture(GL_TEXTURE0 + 3);
-        glBindTexture(GL_TEXTURE_2D, fftFoamTexture);
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
         if (waveMode == 3) {
             fftPrototypeOcean.draw();
@@ -603,25 +594,11 @@ int main(int argc, char** argv)
             ocean.draw();
         }
         glBindTexture(GL_TEXTURE_2D, 0);
-        glActiveTexture(GL_TEXTURE0 + 1);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glActiveTexture(GL_TEXTURE0 + 2);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glActiveTexture(GL_TEXTURE0 + 3);
-        glBindTexture(GL_TEXTURE_2D, 0);
-        glActiveTexture(GL_TEXTURE0);
 
         if (options.showWire) {
             oceanShader.setVec3("uBaseColor", glm::vec3(0.62f, 0.84f, 0.88f));
             oceanShader.setFloat("uAlpha", 0.45f);
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-            glActiveTexture(GL_TEXTURE0 + 1);
-            glBindTexture(GL_TEXTURE_2D, fftSlopeTexture);
-            glActiveTexture(GL_TEXTURE0 + 2);
-            glBindTexture(GL_TEXTURE_2D, fftDisplacementTexture);
-            glActiveTexture(GL_TEXTURE0 + 3);
-            glBindTexture(GL_TEXTURE_2D, fftFoamTexture);
-            glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
             if (waveMode == 3) {
                 fftPrototypeOcean.draw();
@@ -629,13 +606,6 @@ int main(int argc, char** argv)
                 ocean.draw();
             }
             glBindTexture(GL_TEXTURE_2D, 0);
-            glActiveTexture(GL_TEXTURE0 + 1);
-            glBindTexture(GL_TEXTURE_2D, 0);
-            glActiveTexture(GL_TEXTURE0 + 2);
-            glBindTexture(GL_TEXTURE_2D, 0);
-            glActiveTexture(GL_TEXTURE0 + 3);
-            glBindTexture(GL_TEXTURE_2D, 0);
-            glActiveTexture(GL_TEXTURE0);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         }
 
@@ -650,10 +620,8 @@ int main(int argc, char** argv)
     }
 
     glfwDestroyWindow(window);
-    glDeleteTextures(1, &fftHeightTexture);
-    glDeleteTextures(1, &fftSlopeTexture);
-    glDeleteTextures(1, &fftDisplacementTexture);
-    glDeleteTextures(1, &fftFoamTexture);
+    glDeleteTextures(1, &fftH0Texture);
+    glDeleteTextures(1, &fftSpectrumTexture);
     glfwTerminate();
     return 0;
 }

@@ -12,8 +12,7 @@ uniform vec3 uFogColor;
 uniform float uTime;
 uniform int uWaveMode;
 uniform int uWaveCount;
-uniform sampler2D uFftSlopeMap;
-uniform sampler2D uFftFoamMap;
+uniform sampler2D uFftHeightMap;
 uniform float uFftPatchLength;
 
 out vec4 FragColor;
@@ -181,6 +180,18 @@ vec3 acesToneMap(vec3 color)
     return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 }
 
+vec2 fftMicroSlope(vec2 xz)
+{
+    vec2 d0 = normalize(vec2(0.92, 0.38));
+    vec2 d1 = normalize(vec2(0.28, 0.96));
+    vec2 d2 = normalize(vec2(-0.64, 0.77));
+    vec2 s = vec2(0.0);
+    s += d0 * cos(dot(xz, d0) * 0.72 + uTime * 1.35) * 0.72 * 0.090;
+    s += d1 * cos(dot(xz, d1) * 1.18 + uTime * 1.92) * 1.18 * 0.050;
+    s += d2 * cos(dot(xz, d2) * 1.82 + uTime * 2.35) * 1.82 * 0.028;
+    return s;
+}
+
 void main()
 {
     vec3 normal = normalize(analyticalNormal(vSourcePosition));
@@ -191,7 +202,13 @@ void main()
 
     if (uWaveMode == 3) {
         vec2 fftUv = fract(vSourcePosition.xz / uFftPatchLength);
-        vec2 fftSlope = texture(uFftSlopeMap, fftUv).xy;
+        vec2 texel = vec2(1.0 / 256.0);
+        float heightLeft = texture(uFftHeightMap, fftUv - vec2(texel.x, 0.0)).r;
+        float heightRight = texture(uFftHeightMap, fftUv + vec2(texel.x, 0.0)).r;
+        float heightDown = texture(uFftHeightMap, fftUv - vec2(0.0, texel.y)).r;
+        float heightUp = texture(uFftHeightMap, fftUv + vec2(0.0, texel.y)).r;
+        vec2 fftSlope = vec2(heightRight - heightLeft, heightUp - heightDown) * (256.0 / uFftPatchLength);
+        fftSlope += fftMicroSlope(vWorldPosition.xz) * 1.45;
         normal = normalize(vec3(-fftSlope.x, 1.0, -fftSlope.y));
         float diffuse = max(dot(normal, lightDirection), 0.0);
         float fresnel = fresnelSchlick(max(dot(normal, viewDirection), 0.0), 0.0204);
@@ -199,7 +216,7 @@ void main()
         vec3 reflection = skyEnvironment(reflectedDirection);
         float height01 = smoothstep(-2.2, 2.2, vWorldPosition.y);
         float slope = clamp(1.0 - normal.y, 0.0, 1.0);
-        float fftFoam = clamp(texture(uFftFoamMap, fftUv).r * 2.35, 0.0, 1.0);
+        float fftFoam = smoothstep(0.055, 0.18, slope) * smoothstep(0.10, 1.55, vWorldPosition.y);
         float glint = pow(max(dot(normal, halfwayDirection), 0.0), 148.0);
         float broadSun = pow(max(dot(reflectedDirection, lightDirection), 0.0), 18.0);
         vec3 deepWater = vec3(0.004, 0.034, 0.047);
