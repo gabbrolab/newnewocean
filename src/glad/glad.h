@@ -78,6 +78,7 @@ typedef void (APIENTRYP PFNGLUNIFORM2FVPROC)(GLint location, GLsizei count, cons
 typedef void (APIENTRYP PFNGLUNIFORM3FVPROC)(GLint location, GLsizei count, const GLfloat* value);
 typedef void (APIENTRYP PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
 typedef void (APIENTRYP PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
+typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
 
 extern PFNGLGENVERTEXARRAYSPROC glad_glGenVertexArrays;
 extern PFNGLBINDVERTEXARRAYPROC glad_glBindVertexArray;
@@ -107,6 +108,7 @@ extern PFNGLUNIFORM2FVPROC glad_glUniform2fv;
 extern PFNGLUNIFORM3FVPROC glad_glUniform3fv;
 extern PFNGLUNIFORM1FPROC glad_glUniform1f;
 extern PFNGLUNIFORM1IPROC glad_glUniform1i;
+extern PFNGLDEPTHFUNCPROC glad_glDepthFunc;
 
 #define glGenVertexArrays glad_glGenVertexArrays
 #define glBindVertexArray glad_glBindVertexArray
@@ -136,6 +138,7 @@ extern PFNGLUNIFORM1IPROC glad_glUniform1i;
 #define glUniform3fv glad_glUniform3fv
 #define glUniform1f glad_glUniform1f
 #define glUniform1i glad_glUniform1i
+#define glDepthFunc glad_glDepthFunc
 
 int gladLoadGLLoader(GLADloadproc load);
 
