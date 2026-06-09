@@ -8,7 +8,9 @@
 #include <GLFW/glfw3.h>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -286,6 +288,20 @@ void uploadFoamTexture(unsigned int texture, const PrototypeHeightField& field)
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+void accumulateFoam(PrototypeHeightField& field, std::vector<float>& accumulatedFoam, float deltaTime)
+{
+    if (accumulatedFoam.size() != field.foam.size()) {
+        accumulatedFoam = field.foam;
+        return;
+    }
+
+    const float decay = std::exp(-deltaTime * 0.85f);
+    for (size_t i = 0; i < field.foam.size(); ++i) {
+        accumulatedFoam[i] = std::max(field.foam[i], accumulatedFoam[i] * decay);
+        field.foam[i] = accumulatedFoam[i];
+    }
+}
+
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     std::vector<GerstnerWave> waves = {
@@ -415,6 +431,7 @@ int main(int argc, char** argv)
     const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
     const unsigned int fftDisplacementTexture = createDisplacementTexture(fftPrototypeHeight);
     const unsigned int fftFoamTexture = createFoamTexture(fftPrototypeHeight);
+    std::vector<float> fftAccumulatedFoam = fftPrototypeHeight.foam;
     const FftSpectrumStats& fftStats = fftOcean.stats();
     const GpuFftStats gpuFftStats = GpuFftSelfTest::runInverseTransform(256);
     std::cout << "FFT spectrum: "
@@ -436,6 +453,7 @@ int main(int argc, char** argv)
 
     auto previousTime = std::chrono::steady_clock::now();
     float previousFftUpdateTime = -1.0f;
+    float previousFoamTime = 0.0f;
     int renderedFrames = 0;
     int waveMode = options.waveMode;
 
@@ -449,11 +467,14 @@ int main(int argc, char** argv)
 
         if (waveMode == 3 && (previousFftUpdateTime < 0.0f || appTime - previousFftUpdateTime > 0.055f)) {
             fftPrototypeHeight = fftOcean.buildPrototypeHeightField(64, appTime * 0.85f);
+            const float foamDeltaTime = previousFftUpdateTime < 0.0f ? 0.0f : appTime - previousFoamTime;
+            accumulateFoam(fftPrototypeHeight, fftAccumulatedFoam, foamDeltaTime);
             uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
             uploadSlopeTexture(fftSlopeTexture, fftPrototypeHeight);
             uploadDisplacementTexture(fftDisplacementTexture, fftPrototypeHeight);
             uploadFoamTexture(fftFoamTexture, fftPrototypeHeight);
             previousFftUpdateTime = appTime;
+            previousFoamTime = appTime;
         }
 
         int framebufferWidth = 0;
