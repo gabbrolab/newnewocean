@@ -36,6 +36,8 @@ target_include_directories(glad PUBLIC
 add_executable(GabbroOcean
     src/Camera.cpp
     src/Camera.h
+    src/FftOcean.cpp
+    src/FftOcean.h
     src/Mesh.cpp
     src/Mesh.h
     src/Ocean.cpp
@@ -65,4 +67,3 @@ if(MSVC)
 else()
     target_compile_options(GabbroOcean PRIVATE -Wall -Wextra -Wpedantic)
 endif()
-

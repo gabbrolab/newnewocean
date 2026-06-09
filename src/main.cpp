@@ -1,4 +1,5 @@
 #include "Camera.h"
+#include "FftOcean.h"
 #include "Ocean.h"
 #include "Shader.h"
 
@@ -78,6 +79,8 @@ AppOptions parseOptions(int argc, char** argv)
                 options.waveMode = 1;
             } else if (mode == "gerstner") {
                 options.waveMode = 2;
+            } else if (mode == "fft") {
+                options.waveMode = 3;
             }
         } else if (arg == "--wire") {
             options.showWire = true;
@@ -184,6 +187,9 @@ void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& wave
     if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
         waveMode = 2;
     }
+    if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+        waveMode = 3;
+    }
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
     } else {
@@ -245,6 +251,17 @@ int main(int argc, char** argv)
     Shader skyShader("shaders/sky.vert", "shaders/sky.frag");
     Ocean ocean(800.0f, 768);
     const std::vector<GerstnerWave> waves = makeMultipleWaves();
+    const FftOcean fftOcean(FftOceanConfig {}, SpectrumParameters {});
+    const FftSpectrumStats& fftStats = fftOcean.stats();
+    std::cout << "FFT spectrum: "
+              << fftOcean.config().resolution << "x" << fftOcean.config().resolution
+              << ", patch " << fftOcean.config().patchLength << "m"
+              << ", max |H0| " << fftStats.maxMagnitude
+              << ", avg |H0| " << fftStats.averageMagnitude
+              << ", energy " << fftStats.totalEnergy
+              << (fftStats.hasInvalidValues ? " (invalid values detected)" : "")
+              << "\n";
+    fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
 
     auto previousTime = std::chrono::steady_clock::now();
     int renderedFrames = 0;
