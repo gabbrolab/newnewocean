@@ -247,6 +247,45 @@ void uploadDisplacementTexture(unsigned int texture, const PrototypeHeightField&
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
+unsigned int createFoamTexture(const PrototypeHeightField& field)
+{
+    unsigned int texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexImage2D(
+        GL_TEXTURE_2D,
+        0,
+        GL_R32F,
+        field.resolution,
+        field.resolution,
+        0,
+        GL_RED,
+        GL_FLOAT,
+        field.foam.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+    return texture;
+}
+
+void uploadFoamTexture(unsigned int texture, const PrototypeHeightField& field)
+{
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexSubImage2D(
+        GL_TEXTURE_2D,
+        0,
+        0,
+        0,
+        field.resolution,
+        field.resolution,
+        GL_RED,
+        GL_FLOAT,
+        field.foam.data());
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
 std::vector<GerstnerWave> makeMultipleWaves()
 {
     std::vector<GerstnerWave> waves = {
@@ -375,6 +414,7 @@ int main(int argc, char** argv)
     const unsigned int fftHeightTexture = createHeightTexture(fftPrototypeHeight);
     const unsigned int fftSlopeTexture = createSlopeTexture(fftPrototypeHeight);
     const unsigned int fftDisplacementTexture = createDisplacementTexture(fftPrototypeHeight);
+    const unsigned int fftFoamTexture = createFoamTexture(fftPrototypeHeight);
     const FftSpectrumStats& fftStats = fftOcean.stats();
     const GpuFftStats gpuFftStats = GpuFftSelfTest::runInverseTransform(256);
     std::cout << "FFT spectrum: "
@@ -412,6 +452,7 @@ int main(int argc, char** argv)
             uploadHeightTexture(fftHeightTexture, fftPrototypeHeight);
             uploadSlopeTexture(fftSlopeTexture, fftPrototypeHeight);
             uploadDisplacementTexture(fftDisplacementTexture, fftPrototypeHeight);
+            uploadFoamTexture(fftFoamTexture, fftPrototypeHeight);
             previousFftUpdateTime = appTime;
         }
 
@@ -446,6 +487,7 @@ int main(int argc, char** argv)
         oceanShader.setInt("uFftHeightMap", 0);
         oceanShader.setInt("uFftSlopeMap", 1);
         oceanShader.setInt("uFftDisplacementMap", 2);
+        oceanShader.setInt("uFftFoamMap", 3);
         oceanShader.setFloat("uFftPatchLength", fftPrototypeHeight.patchLength);
         oceanShader.setFloat("uFftChoppiness", 0.85f);
         uploadWaves(oceanShader, waves);
@@ -458,6 +500,8 @@ int main(int argc, char** argv)
         glBindTexture(GL_TEXTURE_2D, fftSlopeTexture);
         glActiveTexture(GL_TEXTURE0 + 2);
         glBindTexture(GL_TEXTURE_2D, fftDisplacementTexture);
+        glActiveTexture(GL_TEXTURE0 + 3);
+        glBindTexture(GL_TEXTURE_2D, fftFoamTexture);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
         if (waveMode == 3) {
@@ -470,6 +514,8 @@ int main(int argc, char** argv)
         glBindTexture(GL_TEXTURE_2D, 0);
         glActiveTexture(GL_TEXTURE0 + 2);
         glBindTexture(GL_TEXTURE_2D, 0);
+        glActiveTexture(GL_TEXTURE0 + 3);
+        glBindTexture(GL_TEXTURE_2D, 0);
         glActiveTexture(GL_TEXTURE0);
 
         if (options.showWire) {
@@ -480,6 +526,8 @@ int main(int argc, char** argv)
             glBindTexture(GL_TEXTURE_2D, fftSlopeTexture);
             glActiveTexture(GL_TEXTURE0 + 2);
             glBindTexture(GL_TEXTURE_2D, fftDisplacementTexture);
+            glActiveTexture(GL_TEXTURE0 + 3);
+            glBindTexture(GL_TEXTURE_2D, fftFoamTexture);
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, fftHeightTexture);
             if (waveMode == 3) {
@@ -491,6 +539,8 @@ int main(int argc, char** argv)
             glActiveTexture(GL_TEXTURE0 + 1);
             glBindTexture(GL_TEXTURE_2D, 0);
             glActiveTexture(GL_TEXTURE0 + 2);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glActiveTexture(GL_TEXTURE0 + 3);
             glBindTexture(GL_TEXTURE_2D, 0);
             glActiveTexture(GL_TEXTURE0);
             glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
@@ -510,6 +560,7 @@ int main(int argc, char** argv)
     glDeleteTextures(1, &fftHeightTexture);
     glDeleteTextures(1, &fftSlopeTexture);
     glDeleteTextures(1, &fftDisplacementTexture);
+    glDeleteTextures(1, &fftFoamTexture);
     glfwTerminate();
     return 0;
 }
