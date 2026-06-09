@@ -7,6 +7,7 @@ class Shader {
 public:
     Shader() = default;
     Shader(const std::string& vertexPath, const std::string& fragmentPath);
+    explicit Shader(const std::string& computePath);
     ~Shader();
 
     Shader(const Shader&) = delete;

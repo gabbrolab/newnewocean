@@ -48,6 +48,54 @@ extern "C" {
 #ifndef GL_MULTISAMPLE
 #define GL_MULTISAMPLE 0x809D
 #endif
+#ifndef GL_COMPUTE_SHADER
+#define GL_COMPUTE_SHADER 0x91B9
+#endif
+#ifndef GL_SHADER_IMAGE_ACCESS_BARRIER_BIT
+#define GL_SHADER_IMAGE_ACCESS_BARRIER_BIT 0x00000020
+#endif
+#ifndef GL_TEXTURE_FETCH_BARRIER_BIT
+#define GL_TEXTURE_FETCH_BARRIER_BIT 0x00000008
+#endif
+#ifndef GL_SHADER_STORAGE_BARRIER_BIT
+#define GL_SHADER_STORAGE_BARRIER_BIT 0x00002000
+#endif
+#ifndef GL_TEXTURE_2D
+#define GL_TEXTURE_2D 0x0DE1
+#endif
+#ifndef GL_TEXTURE_MIN_FILTER
+#define GL_TEXTURE_MIN_FILTER 0x2801
+#endif
+#ifndef GL_TEXTURE_MAG_FILTER
+#define GL_TEXTURE_MAG_FILTER 0x2800
+#endif
+#ifndef GL_TEXTURE_WRAP_S
+#define GL_TEXTURE_WRAP_S 0x2802
+#endif
+#ifndef GL_TEXTURE_WRAP_T
+#define GL_TEXTURE_WRAP_T 0x2803
+#endif
+#ifndef GL_NEAREST
+#define GL_NEAREST 0x2600
+#endif
+#ifndef GL_RG
+#define GL_RG 0x8227
+#endif
+#ifndef GL_RG32F
+#define GL_RG32F 0x8230
+#endif
+#ifndef GL_R32F
+#define GL_R32F 0x822E
+#endif
+#ifndef GL_READ_ONLY
+#define GL_READ_ONLY 0x88B8
+#endif
+#ifndef GL_WRITE_ONLY
+#define GL_WRITE_ONLY 0x88B9
+#endif
+#ifndef GL_READ_WRITE
+#define GL_READ_WRITE 0x88BA
+#endif
 
 typedef ptrdiff_t GLsizeiptr;
 typedef char GLchar;
@@ -82,6 +130,9 @@ typedef void (APIENTRYP PFNGLUNIFORM3FVPROC)(GLint location, GLsizei count, cons
 typedef void (APIENTRYP PFNGLUNIFORM1FPROC)(GLint location, GLfloat v0);
 typedef void (APIENTRYP PFNGLUNIFORM1IPROC)(GLint location, GLint v0);
 typedef void (APIENTRYP PFNGLDEPTHFUNCPROC)(GLenum func);
+typedef void (APIENTRYP PFNGLDISPATCHCOMPUTEPROC)(GLuint num_groups_x, GLuint num_groups_y, GLuint num_groups_z);
+typedef void (APIENTRYP PFNGLMEMORYBARRIERPROC)(GLbitfield barriers);
+typedef void (APIENTRYP PFNGLBINDIMAGETEXTUREPROC)(GLuint unit, GLuint texture, GLint level, GLboolean layered, GLint layer, GLenum access, GLenum format);
 
 extern PFNGLGENVERTEXARRAYSPROC glad_glGenVertexArrays;
 extern PFNGLBINDVERTEXARRAYPROC glad_glBindVertexArray;
@@ -112,6 +163,9 @@ extern PFNGLUNIFORM3FVPROC glad_glUniform3fv;
 extern PFNGLUNIFORM1FPROC glad_glUniform1f;
 extern PFNGLUNIFORM1IPROC glad_glUniform1i;
 extern PFNGLDEPTHFUNCPROC glad_glDepthFunc;
+extern PFNGLDISPATCHCOMPUTEPROC glad_glDispatchCompute;
+extern PFNGLMEMORYBARRIERPROC glad_glMemoryBarrier;
+extern PFNGLBINDIMAGETEXTUREPROC glad_glBindImageTexture;
 
 #define glGenVertexArrays glad_glGenVertexArrays
 #define glBindVertexArray glad_glBindVertexArray
@@ -142,6 +196,9 @@ extern PFNGLDEPTHFUNCPROC glad_glDepthFunc;
 #define glUniform1f glad_glUniform1f
 #define glUniform1i glad_glUniform1i
 #define glDepthFunc glad_glDepthFunc
+#define glDispatchCompute glad_glDispatchCompute
+#define glMemoryBarrier glad_glMemoryBarrier
+#define glBindImageTexture glad_glBindImageTexture
 
 int gladLoadGLLoader(GLADloadproc load);
 

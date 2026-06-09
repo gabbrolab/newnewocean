@@ -1,5 +1,6 @@
 #include "Camera.h"
 #include "FftOcean.h"
+#include "GpuFft.h"
 #include "Ocean.h"
 #include "Shader.h"
 
@@ -216,7 +217,7 @@ int main(int argc, char** argv)
         return 1;
     }
 
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
@@ -257,6 +258,7 @@ int main(int argc, char** argv)
         return fftPrototypeHeight.sample(x, z);
     });
     const FftSpectrumStats& fftStats = fftOcean.stats();
+    const GpuFftStats gpuFftStats = GpuFftSelfTest::runInverseTransform(256);
     std::cout << "FFT spectrum: "
               << fftOcean.config().resolution << "x" << fftOcean.config().resolution
               << ", patch " << fftOcean.config().patchLength << "m"
@@ -267,6 +269,11 @@ int main(int argc, char** argv)
               << "\n";
     std::cout << "FFT prototype height: min " << fftPrototypeHeight.minHeight
               << ", max " << fftPrototypeHeight.maxHeight << "\n";
+    std::cout << "GPU FFT self-test: min " << gpuFftStats.minValue
+              << ", max " << gpuFftStats.maxValue
+              << ", avg abs " << gpuFftStats.averageAbsValue
+              << (gpuFftStats.hasInvalidValues ? " (invalid values detected)" : "")
+              << "\n";
     fftOcean.saveSpectrumDebugImage("build/fft-spectrum-debug.bmp");
 
     auto previousTime = std::chrono::steady_clock::now();
