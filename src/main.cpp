@@ -18,7 +18,7 @@ struct AppOptions {
     int width = 1280;
     int height = 720;
     int captureFrames = 2;
-    int waveMode = 1;
+    int waveMode = 2;
     std::string capturePath;
 };
 
@@ -75,6 +75,8 @@ AppOptions parseOptions(int argc, char** argv)
                 options.waveMode = 0;
             } else if (mode == "sine") {
                 options.waveMode = 1;
+            } else if (mode == "sines" || mode == "multi-sine") {
+                options.waveMode = 2;
             }
         }
     }
@@ -131,6 +133,9 @@ void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& wave
     }
     if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
         waveMode = 1;
+    }
+    if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+        waveMode = 2;
     }
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
