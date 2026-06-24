@@ -75,7 +75,7 @@ AppOptions parseOptions(int argc, char** argv)
                 options.waveMode = 0;
             } else if (mode == "sine") {
                 options.waveMode = 1;
-            } else if (mode == "sines" || mode == "multi-sine") {
+            } else if (mode == "gerstner") {
                 options.waveMode = 2;
             }
         }
@@ -249,4 +249,3 @@ int main(int argc, char** argv)
     glfwTerminate();
     return 0;
 }
-
