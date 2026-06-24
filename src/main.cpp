@@ -22,6 +22,8 @@ struct AppOptions {
     int height = 720;
     int captureFrames = 2;
     bool showWire = false;
+    int debugView = 0;
+    int debugCascade = -1;
     std::string quality = "medium";
     std::string capturePath;
 };
@@ -34,6 +36,29 @@ struct InputState {
 };
 
 InputState gInput;
+
+int debugViewFor(const std::string& view)
+{
+    if (view == "height") {
+        return 1;
+    }
+    if (view == "slope") {
+        return 2;
+    }
+    if (view == "foam") {
+        return 3;
+    }
+    if (view == "cascade") {
+        return 4;
+    }
+    if (view == "spectrum") {
+        return 5;
+    }
+    if (view == "normal" || view == "normals") {
+        return 6;
+    }
+    return 0;
+}
 
 void framebufferSizeCallback(GLFWwindow*, int width, int height)
 {
@@ -75,6 +100,13 @@ AppOptions parseOptions(int argc, char** argv)
             options.height = std::max(240, std::stoi(argv[++i]));
         } else if (arg == "--quality" && i + 1 < argc) {
             options.quality = argv[++i];
+        } else if (arg == "--debug" && i + 1 < argc) {
+            options.debugView = debugViewFor(argv[++i]);
+        } else if (arg == "--cascade" && i + 1 < argc) {
+            const std::string cascade = argv[++i];
+            options.debugCascade = cascade == "all"
+                ? -1
+                : std::clamp(std::stoi(cascade), 0, FftOcean::kCascadeCount - 1);
         } else if (arg == "--wire") {
             options.showWire = true;
         }
@@ -264,6 +296,8 @@ int main(int argc, char** argv)
         oceanShader.setMat4("uView", view);
         oceanShader.setMat4("uProjection", projection);
         oceanShader.setInt("uCascadeCount", fftOcean.cascadeCount());
+        oceanShader.setInt("uDebugView", options.debugView);
+        oceanShader.setInt("uDebugCascade", options.debugCascade);
         setFloatArray(oceanShader, "uLengthScales", fftOcean.lengthScales());
         setFloatArray(oceanShader, "uTiles", fftOcean.tiles());
         oceanShader.setVec3("uCameraPosition", camera.position());
@@ -284,11 +318,14 @@ int main(int argc, char** argv)
         oceanShader.setFloat("uEnvironmentLightStrength", 1.0f);
         oceanShader.setInt("uDisplacement", 0);
         oceanShader.setInt("uSlope", 1);
+        oceanShader.setInt("uInitialSpectrum", 2);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D_ARRAY, fftOcean.displacementArray());
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D_ARRAY, fftOcean.slopeArray());
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, fftOcean.initialSpectrumArray());
 
         if (options.showWire) {
             glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -301,6 +338,8 @@ int main(int argc, char** argv)
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
         glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+        glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
         glActiveTexture(GL_TEXTURE0);
 

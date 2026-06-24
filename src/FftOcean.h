@@ -46,6 +46,7 @@ public:
 
     unsigned int displacementArray() const { return displacementTexture_; }
     unsigned int slopeArray() const { return slopeTexture_; }
+    unsigned int initialSpectrumArray() const { return initialSpectrumTexture_; }
 
     int cascadeCount() const { return kCascadeCount; }
     const std::array<float, kCascadeCount>& lengthScales() const { return lengthScales_; }

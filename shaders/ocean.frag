@@ -7,7 +7,10 @@ out vec4 FragColor;
 
 uniform sampler2DArray uDisplacement;
 uniform sampler2DArray uSlope;
+uniform sampler2DArray uInitialSpectrum;
 uniform int uCascadeCount;
+uniform int uDebugView;
+uniform int uDebugCascade;
 uniform float uLengthScales[4];
 uniform float uTiles[4];
 
@@ -31,6 +34,30 @@ uniform float uScatterShadowStrength;
 uniform float uEnvironmentLightStrength;
 
 const float PI = 3.14159265358979323846;
+
+bool cascadeEnabled(int cascade)
+{
+    return uDebugCascade < 0 || cascade == uDebugCascade;
+}
+
+int debugCascadeIndex()
+{
+    return clamp(uDebugCascade < 0 ? 0 : uDebugCascade, 0, uCascadeCount - 1);
+}
+
+vec3 cascadeTint(int cascade)
+{
+    if (cascade == 0) {
+        return vec3(0.20, 0.55, 1.00);
+    }
+    if (cascade == 1) {
+        return vec3(0.05, 0.95, 0.70);
+    }
+    if (cascade == 2) {
+        return vec3(1.00, 0.72, 0.20);
+    }
+    return vec3(1.00, 0.28, 0.44);
+}
 
 vec3 skyEnvironment(vec3 direction)
 {
@@ -77,6 +104,9 @@ void main()
     vec4 displacementFoam = vec4(0.0);
     vec2 slopes = vec2(0.0);
     for (int c = 0; c < uCascadeCount; ++c) {
+        if (!cascadeEnabled(c)) {
+            continue;
+        }
         vec2 uv = vWorldUV / uLengthScales[c] * uTiles[c];
         displacementFoam += texture(uDisplacement, vec3(uv, float(c)));
         slopes += texture(uSlope, vec3(uv, float(c))).xy;
@@ -94,6 +124,42 @@ void main()
 
     vec3 normal = normalize(vec3(-slopes.x, 1.0, -slopes.y));
     normal = normalize(mix(vec3(0.0, 1.0, 0.0), normal, mix(0.6, 1.0, detailFade)));
+
+    if (uDebugView == 1) {
+        float height = clamp(displacementFoam.y * 0.06 + 0.5, 0.0, 1.0);
+        FragColor = vec4(vec3(height), 1.0);
+        return;
+    }
+    if (uDebugView == 2) {
+        float slope = clamp(length(slopes) * 0.08, 0.0, 1.0);
+        FragColor = vec4(mix(vec3(0.02, 0.07, 0.10), vec3(0.82, 0.95, 1.00), slope), 1.0);
+        return;
+    }
+    if (uDebugView == 3) {
+        float crestPotential = clamp(length(slopes) * 0.08 + max(displacementFoam.y, 0.0) * 0.05, 0.0, 1.0);
+        float foamDebug = clamp(max(foam * 4.0, crestPotential * 0.65), 0.0, 1.0);
+        FragColor = vec4(mix(vec3(0.00, 0.04, 0.06), uFoamColor, foamDebug), 1.0);
+        return;
+    }
+    if (uDebugView == 4) {
+        int cascade = debugCascadeIndex();
+        float signal = clamp(abs(displacementFoam.y) * 0.22 + length(slopes) * 0.08 + foam * 2.0, 0.0, 1.0);
+        FragColor = vec4(cascadeTint(cascade) * (0.28 + 0.72 * signal), 1.0);
+        return;
+    }
+    if (uDebugView == 5) {
+        int cascade = debugCascadeIndex();
+        vec2 uv = fract(gl_FragCoord.xy / vec2(512.0));
+        vec4 spectrum = texture(uInitialSpectrum, vec3(uv, float(cascade)));
+        float energy = clamp(log(1.0 + length(spectrum) * 60000.0) * 0.22, 0.0, 1.0);
+        FragColor = vec4(mix(vec3(0.01, 0.02, 0.05), cascadeTint(cascade), energy), 1.0);
+        return;
+    }
+    if (uDebugView == 6) {
+        FragColor = vec4(normal * 0.5 + 0.5, 1.0);
+        return;
+    }
+
     vec3 lightDir = normalize(uSunDirection);
     vec3 viewDir = normalize(uCameraPosition - vWorldPosition);
     vec3 halfwayDir = normalize(lightDir + viewDir);

@@ -8,12 +8,18 @@ uniform mat4 uProjection;
 
 uniform sampler2DArray uDisplacement;
 uniform int uCascadeCount;
+uniform int uDebugCascade;
 uniform float uLengthScales[4];
 uniform float uTiles[4];
 uniform vec3 uCameraPosition;
 
 out vec3 vWorldPosition;
 out vec2 vWorldUV;
+
+bool cascadeEnabled(int cascade)
+{
+    return uDebugCascade < 0 || cascade == uDebugCascade;
+}
 
 void main()
 {
@@ -22,6 +28,9 @@ void main()
 
     vec3 displacement = vec3(0.0);
     for (int c = 0; c < uCascadeCount; ++c) {
+        if (!cascadeEnabled(c)) {
+            continue;
+        }
         vec2 uv = world.xz / uLengthScales[c] * uTiles[c];
         displacement += textureLod(uDisplacement, vec3(uv, float(c)), 0.0).xyz;
     }
