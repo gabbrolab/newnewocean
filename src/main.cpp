@@ -18,6 +18,7 @@ struct AppOptions {
     int width = 1280;
     int height = 720;
     int captureFrames = 2;
+    int waveMode = 1;
     std::string capturePath;
 };
 
@@ -68,6 +69,13 @@ AppOptions parseOptions(int argc, char** argv)
             options.width = std::max(320, std::stoi(argv[++i]));
         } else if (arg == "--height" && i + 1 < argc) {
             options.height = std::max(240, std::stoi(argv[++i]));
+        } else if (arg == "--mode" && i + 1 < argc) {
+            const std::string mode = argv[++i];
+            if (mode == "flat") {
+                options.waveMode = 0;
+            } else if (mode == "sine") {
+                options.waveMode = 1;
+            }
         }
     }
     return options;
@@ -113,10 +121,16 @@ void saveFramebufferBmp(const std::filesystem::path& path, int width, int height
     out.write(reinterpret_cast<const char*>(bmp.data()), static_cast<std::streamsize>(bmp.size()));
 }
 
-void processInput(GLFWwindow* window, Camera& camera, float deltaTime)
+void processInput(GLFWwindow* window, Camera& camera, float deltaTime, int& waveMode)
 {
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, GLFW_TRUE);
+    }
+    if (glfwGetKey(window, GLFW_KEY_0) == GLFW_PRESS) {
+        waveMode = 0;
+    }
+    if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+        waveMode = 1;
     }
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -178,13 +192,14 @@ int main(int argc, char** argv)
 
     auto previousTime = std::chrono::steady_clock::now();
     int renderedFrames = 0;
+    int waveMode = options.waveMode;
 
     while (!glfwWindowShouldClose(window)) {
         const auto currentTime = std::chrono::steady_clock::now();
         const float deltaTime = std::chrono::duration<float>(currentTime - previousTime).count();
         previousTime = currentTime;
 
-        processInput(window, camera, deltaTime);
+        processInput(window, camera, deltaTime, waveMode);
 
         int framebufferWidth = 0;
         int framebufferHeight = 0;
@@ -203,6 +218,8 @@ int main(int argc, char** argv)
         oceanShader.setMat4("uModel", glm::mat4(1.0f));
         oceanShader.setMat4("uView", camera.viewMatrix());
         oceanShader.setMat4("uProjection", projection);
+        oceanShader.setFloat("uTime", static_cast<float>(glfwGetTime()));
+        oceanShader.setInt("uWaveMode", waveMode);
         oceanShader.setVec3("uBaseColor", glm::vec3(0.05f, 0.22f, 0.28f));
         oceanShader.setFloat("uAlpha", 1.0f);
         ocean.draw();
