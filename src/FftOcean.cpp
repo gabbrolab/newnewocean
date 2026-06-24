@@ -159,7 +159,7 @@ void FftOcean::generateInitialSpectrum()
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void FftOcean::update(float time)
+void FftOcean::updateSpectrum(float time)
 {
     const GLuint groups = static_cast<GLuint>(kResolution / 8);
 
@@ -173,7 +173,10 @@ void FftOcean::update(float time)
     glBindImageTexture(1, spectrumTexture_, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA32F);
     glDispatchCompute(groups, groups, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
 
+void FftOcean::runInverseFft()
+{
     fftHorizontalShader_.use();
     glBindImageTexture(0, spectrumTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
     glDispatchCompute(1, static_cast<GLuint>(kResolution), 1);
@@ -183,6 +186,14 @@ void FftOcean::update(float time)
     glBindImageTexture(0, spectrumTexture_, 0, GL_TRUE, 0, GL_READ_WRITE, GL_RGBA32F);
     glDispatchCompute(1, static_cast<GLuint>(kResolution), 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+}
+
+void FftOcean::update(float time)
+{
+    const GLuint groups = static_cast<GLuint>(kResolution / 8);
+
+    updateSpectrum(time);
+    runInverseFft();
 
     assembleShader_.use();
     assembleShader_.setInt("uN", kResolution);

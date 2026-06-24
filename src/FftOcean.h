@@ -68,6 +68,8 @@ private:
     void createTextures();
     void uploadSpectrumBuffer();
     void generateInitialSpectrum();
+    void updateSpectrum(float time);
+    void runInverseFft();
     void setLengthScaleUniform(const Shader& shader) const;
     SpectrumParameters toSpectrumParameters(const OceanDisplaySpectrum& settings) const;
 
