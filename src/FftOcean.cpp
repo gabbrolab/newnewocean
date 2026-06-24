@@ -188,12 +188,9 @@ void FftOcean::runInverseFft()
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
 }
 
-void FftOcean::update(float time)
+void FftOcean::assembleMaps()
 {
     const GLuint groups = static_cast<GLuint>(kResolution / 8);
-
-    updateSpectrum(time);
-    runInverseFft();
 
     assembleShader_.use();
     assembleShader_.setInt("uN", kResolution);
@@ -213,4 +210,11 @@ void FftOcean::update(float time)
     glBindTexture(GL_TEXTURE_2D_ARRAY, slopeTexture_);
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
+}
+
+void FftOcean::update(float time)
+{
+    updateSpectrum(time);
+    runInverseFft();
+    assembleMaps();
 }

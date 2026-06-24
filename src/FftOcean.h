@@ -70,6 +70,7 @@ private:
     void generateInitialSpectrum();
     void updateSpectrum(float time);
     void runInverseFft();
+    void assembleMaps();
     void setLengthScaleUniform(const Shader& shader) const;
     SpectrumParameters toSpectrumParameters(const OceanDisplaySpectrum& settings) const;
 
