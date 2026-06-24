@@ -100,8 +100,8 @@ private:
     float highCutoff_ = 9000.0f;
     float repeatTime_ = 200.0f;
 
-    float foamBias_ = -0.8f;
+    float foamBias_ = -0.15f;
     float foamThreshold_ = 0.0f;
-    float foamAdd_ = 0.35f;
-    float foamDecayRate_ = 0.06f;
+    float foamAdd_ = 0.7f;
+    float foamDecayRate_ = 0.03f;
 };

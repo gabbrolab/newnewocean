@@ -120,7 +120,7 @@ void main()
     // (the slope mipmaps already do most of the anti-aliasing).
     float detailFade = 1.0 - smoothstep(180.0, 700.0, distanceToCamera);
 
-    float foam = clamp(displacementFoam.a, 0.0, 1.0) * mix(0.35, 1.0, detailFade);
+    float foam = clamp(displacementFoam.a, 0.0, 1.0) * mix(0.6, 1.0, detailFade);
 
     vec3 normal = normalize(vec3(-slopes.x, 1.0, -slopes.y));
     normal = normalize(mix(vec3(0.0, 1.0, 0.0), normal, mix(0.6, 1.0, detailFade)));

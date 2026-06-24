@@ -310,7 +310,7 @@ int main(int argc, char** argv)
         oceanShader.setFloat("uHeightModifier", 1.0f);
         oceanShader.setVec3("uScatterColor", glm::vec3(0.03f, 0.10f, 0.13f));
         oceanShader.setVec3("uBubbleColor", glm::vec3(0.0f, 0.02f, 0.03f));
-        oceanShader.setVec3("uFoamColor", glm::vec3(0.85f, 0.92f, 0.92f));
+        oceanShader.setVec3("uFoamColor", glm::vec3(0.92f, 0.96f, 0.96f));
         oceanShader.setFloat("uBubbleDensity", 0.45f);
         oceanShader.setFloat("uWavePeakScatterStrength", 1.1f);
         oceanShader.setFloat("uScatterStrength", 0.5f);
